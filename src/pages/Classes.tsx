@@ -97,7 +97,7 @@ export default function Classes() {
         const { error } = await supabase.from("classes").update(parsed.data).eq("id", editing.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from("classes").insert(parsed.data);
+        const { error } = await supabase.from("classes").insert([parsed.data]);
         if (error) throw error;
       }
     },
