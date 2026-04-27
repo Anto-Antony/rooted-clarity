@@ -93,11 +93,17 @@ export default function Classes() {
       };
       const parsed = schema.safeParse(payload);
       if (!parsed.success) throw new Error(parsed.error.issues[0].message);
+      const insertPayload = {
+        course_id: payload.course_id,
+        section: payload.section,
+        academic_year: payload.academic_year,
+        class_teacher_id: payload.class_teacher_id,
+      };
       if (editing) {
-        const { error } = await supabase.from("classes").update(parsed.data).eq("id", editing.id);
+        const { error } = await supabase.from("classes").update(insertPayload).eq("id", editing.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from("classes").insert([parsed.data]);
+        const { error } = await supabase.from("classes").insert([insertPayload]);
         if (error) throw error;
       }
     },

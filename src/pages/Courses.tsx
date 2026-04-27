@@ -39,11 +39,12 @@ export default function Courses() {
     mutationFn: async () => {
       const parsed = schema.safeParse({ name: form.name, credits: Number(form.credits) });
       if (!parsed.success) throw new Error(parsed.error.issues[0].message);
+      const payload = { name: parsed.data.name, credits: parsed.data.credits };
       if (editing) {
-        const { error } = await supabase.from("courses").update(parsed.data).eq("id", editing.id);
+        const { error } = await supabase.from("courses").update(payload).eq("id", editing.id);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from("courses").insert([parsed.data]);
+        const { error } = await supabase.from("courses").insert([payload]);
         if (error) throw error;
       }
     },
