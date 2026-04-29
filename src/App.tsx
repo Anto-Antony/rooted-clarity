@@ -14,6 +14,14 @@ import Staff from "./pages/Staff";
 import Courses from "./pages/Courses";
 import Classes from "./pages/Classes";
 import Profile from "./pages/Profile";
+import Timetable from "./pages/Timetable";
+import Attendance from "./pages/Attendance";
+import Assignments from "./pages/Assignments";
+import Tests from "./pages/Tests";
+import Leaves from "./pages/Leaves";
+import Finance from "./pages/Finance";
+import Notifications from "./pages/Notifications";
+import AuditLog from "./pages/AuditLog";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
