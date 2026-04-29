@@ -173,6 +173,7 @@ export default function Classes() {
                       {c.class_teacher_id ? staffById[c.class_teacher_id] ?? "—" : <span className="italic">Unassigned</span>}
                     </td>
                     <td className="px-4 py-3 text-right">
+                      <Button variant="ghost" size="sm" onClick={() => setRosterFor(c)}><UsersIcon className="h-4 w-4 mr-1" /> Roster</Button>
                       <Button variant="ghost" size="sm" onClick={() => openEdit(c)}>Edit</Button>
                       <Button variant="ghost" size="sm" onClick={() => del.mutate(c.id)} disabled={del.isPending}>
                         <Trash2 className="h-4 w-4 text-destructive" />
