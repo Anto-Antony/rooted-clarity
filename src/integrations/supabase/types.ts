@@ -14,6 +14,177 @@ export type Database = {
   }
   public: {
     Tables: {
+      assignment_submissions: {
+        Row: {
+          assignment_id: string
+          feedback: string | null
+          file_url: string | null
+          graded_at: string | null
+          graded_by: string | null
+          id: string
+          marks: number | null
+          notes: string | null
+          student_id: string
+          submitted_at: string
+          updated_at: string
+        }
+        Insert: {
+          assignment_id: string
+          feedback?: string | null
+          file_url?: string | null
+          graded_at?: string | null
+          graded_by?: string | null
+          id?: string
+          marks?: number | null
+          notes?: string | null
+          student_id: string
+          submitted_at?: string
+          updated_at?: string
+        }
+        Update: {
+          assignment_id?: string
+          feedback?: string | null
+          file_url?: string | null
+          graded_at?: string | null
+          graded_by?: string | null
+          id?: string
+          marks?: number | null
+          notes?: string | null
+          student_id?: string
+          submitted_at?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      assignments: {
+        Row: {
+          class_id: string
+          created_at: string
+          created_by: string | null
+          description: string | null
+          due_date: string
+          id: string
+          max_marks: number
+          subject: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          class_id: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          due_date: string
+          id?: string
+          max_marks?: number
+          subject?: string | null
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          class_id?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          due_date?: string
+          id?: string
+          max_marks?: number
+          subject?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      attendance_records: {
+        Row: {
+          class_id: string
+          created_at: string
+          date: string
+          id: string
+          marked_by: string | null
+          remarks: string | null
+          status: Database["public"]["Enums"]["attendance_status"]
+          student_id: string
+          updated_at: string
+        }
+        Insert: {
+          class_id: string
+          created_at?: string
+          date?: string
+          id?: string
+          marked_by?: string | null
+          remarks?: string | null
+          status?: Database["public"]["Enums"]["attendance_status"]
+          student_id: string
+          updated_at?: string
+        }
+        Update: {
+          class_id?: string
+          created_at?: string
+          date?: string
+          id?: string
+          marked_by?: string | null
+          remarks?: string | null
+          status?: Database["public"]["Enums"]["attendance_status"]
+          student_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      audit_logs: {
+        Row: {
+          action: string
+          actor_id: string | null
+          after_data: Json | null
+          before_data: Json | null
+          created_at: string
+          entity: string
+          entity_id: string | null
+          id: string
+        }
+        Insert: {
+          action: string
+          actor_id?: string | null
+          after_data?: Json | null
+          before_data?: Json | null
+          created_at?: string
+          entity: string
+          entity_id?: string | null
+          id?: string
+        }
+        Update: {
+          action?: string
+          actor_id?: string | null
+          after_data?: Json | null
+          before_data?: Json | null
+          created_at?: string
+          entity?: string
+          entity_id?: string | null
+          id?: string
+        }
+        Relationships: []
+      }
+      class_enrollments: {
+        Row: {
+          class_id: string
+          created_at: string
+          id: string
+          student_id: string
+        }
+        Insert: {
+          class_id: string
+          created_at?: string
+          id?: string
+          student_id: string
+        }
+        Update: {
+          class_id?: string
+          created_at?: string
+          id?: string
+          student_id?: string
+        }
+        Relationships: []
+      }
       classes: {
         Row: {
           academic_year: string
@@ -80,6 +251,192 @@ export type Database = {
           id?: string
           name?: string
           updated_at?: string
+        }
+        Relationships: []
+      }
+      fee_invoices: {
+        Row: {
+          amount: number
+          amount_paid: number
+          created_at: string
+          due_date: string
+          fee_structure_id: string | null
+          id: string
+          invoice_number: string
+          notes: string | null
+          status: Database["public"]["Enums"]["invoice_status"]
+          student_id: string
+          updated_at: string
+        }
+        Insert: {
+          amount: number
+          amount_paid?: number
+          created_at?: string
+          due_date: string
+          fee_structure_id?: string | null
+          id?: string
+          invoice_number?: string
+          notes?: string | null
+          status?: Database["public"]["Enums"]["invoice_status"]
+          student_id: string
+          updated_at?: string
+        }
+        Update: {
+          amount?: number
+          amount_paid?: number
+          created_at?: string
+          due_date?: string
+          fee_structure_id?: string | null
+          id?: string
+          invoice_number?: string
+          notes?: string | null
+          status?: Database["public"]["Enums"]["invoice_status"]
+          student_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      fee_structures: {
+        Row: {
+          active: boolean
+          amount: number
+          created_at: string
+          description: string | null
+          frequency: string
+          id: string
+          name: string
+          program: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          amount: number
+          created_at?: string
+          description?: string | null
+          frequency?: string
+          id?: string
+          name: string
+          program?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          amount?: number
+          created_at?: string
+          description?: string | null
+          frequency?: string
+          id?: string
+          name?: string
+          program?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      leaves: {
+        Row: {
+          created_at: string
+          end_date: string
+          id: string
+          reason: string
+          requester_id: string
+          requester_type: string
+          reviewed_at: string | null
+          reviewed_by: string | null
+          start_date: string
+          status: Database["public"]["Enums"]["leave_status"]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          end_date: string
+          id?: string
+          reason: string
+          requester_id: string
+          requester_type: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          start_date: string
+          status?: Database["public"]["Enums"]["leave_status"]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          end_date?: string
+          id?: string
+          reason?: string
+          requester_id?: string
+          requester_type?: string
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          start_date?: string
+          status?: Database["public"]["Enums"]["leave_status"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      notifications: {
+        Row: {
+          body: string | null
+          created_at: string
+          id: string
+          link: string | null
+          read: boolean
+          title: string
+          user_id: string
+        }
+        Insert: {
+          body?: string | null
+          created_at?: string
+          id?: string
+          link?: string | null
+          read?: boolean
+          title: string
+          user_id: string
+        }
+        Update: {
+          body?: string | null
+          created_at?: string
+          id?: string
+          link?: string | null
+          read?: boolean
+          title?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      payments: {
+        Row: {
+          amount: number
+          created_at: string
+          id: string
+          invoice_id: string
+          method: string
+          paid_on: string
+          proof_url: string | null
+          recorded_by: string | null
+          reference: string | null
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          id?: string
+          invoice_id: string
+          method?: string
+          paid_on?: string
+          proof_url?: string | null
+          recorded_by?: string | null
+          reference?: string | null
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          id?: string
+          invoice_id?: string
+          method?: string
+          paid_on?: string
+          proof_url?: string | null
+          recorded_by?: string | null
+          reference?: string | null
         }
         Relationships: []
       }
@@ -229,6 +586,117 @@ export type Database = {
         }
         Relationships: []
       }
+      test_results: {
+        Row: {
+          created_at: string
+          id: string
+          marks: number | null
+          remarks: string | null
+          student_id: string
+          test_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          marks?: number | null
+          remarks?: string | null
+          student_id: string
+          test_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          marks?: number | null
+          remarks?: string | null
+          student_id?: string
+          test_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      tests: {
+        Row: {
+          class_id: string
+          created_at: string
+          created_by: string | null
+          id: string
+          max_marks: number
+          published: boolean
+          subject: string | null
+          test_date: string
+          test_type: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          class_id: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          max_marks?: number
+          published?: boolean
+          subject?: string | null
+          test_date: string
+          test_type?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          class_id?: string
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          max_marks?: number
+          published?: boolean
+          subject?: string | null
+          test_date?: string
+          test_type?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      timetable_slots: {
+        Row: {
+          class_id: string
+          created_at: string
+          day_of_week: number
+          end_time: string | null
+          id: string
+          period: number
+          start_time: string | null
+          subject: string
+          teacher_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          class_id: string
+          created_at?: string
+          day_of_week: number
+          end_time?: string | null
+          id?: string
+          period: number
+          start_time?: string | null
+          subject: string
+          teacher_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          class_id?: string
+          created_at?: string
+          day_of_week?: number
+          end_time?: string | null
+          id?: string
+          period?: number
+          start_time?: string | null
+          subject?: string
+          teacher_id?: string | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       user_roles: {
         Row: {
           created_at: string
@@ -271,6 +739,9 @@ export type Database = {
         | "guest_staff"
         | "accountant"
         | "student"
+      attendance_status: "present" | "absent" | "late" | "excused"
+      invoice_status: "pending" | "partial" | "paid" | "overdue" | "cancelled"
+      leave_status: "pending" | "approved" | "rejected"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -406,6 +877,9 @@ export const Constants = {
         "accountant",
         "student",
       ],
+      attendance_status: ["present", "absent", "late", "excused"],
+      invoice_status: ["pending", "partial", "paid", "overdue", "cancelled"],
+      leave_status: ["pending", "approved", "rejected"],
     },
   },
 } as const

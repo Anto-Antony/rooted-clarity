@@ -10,7 +10,7 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Layers, Plus, Trash2 } from "lucide-react";
+import { Layers, Plus, Trash2, Users as UsersIcon } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 
@@ -32,6 +32,7 @@ export default function Classes() {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<ClassRow | null>(null);
+  const [rosterFor, setRosterFor] = useState<ClassRow | null>(null);
   const [form, setForm] = useState({
     course_id: "",
     section: "",
@@ -172,6 +173,7 @@ export default function Classes() {
                       {c.class_teacher_id ? staffById[c.class_teacher_id] ?? "—" : <span className="italic">Unassigned</span>}
                     </td>
                     <td className="px-4 py-3 text-right">
+                      <Button variant="ghost" size="sm" onClick={() => setRosterFor(c)}><UsersIcon className="h-4 w-4 mr-1" /> Roster</Button>
                       <Button variant="ghost" size="sm" onClick={() => openEdit(c)}>Edit</Button>
                       <Button variant="ghost" size="sm" onClick={() => del.mutate(c.id)} disabled={del.isPending}>
                         <Trash2 className="h-4 w-4 text-destructive" />
@@ -229,6 +231,54 @@ export default function Classes() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {rosterFor && <RosterDialog cls={rosterFor} onClose={() => setRosterFor(null)} />}
     </div>
+  );
+}
+
+function RosterDialog({ cls, onClose }: { cls: ClassRow; onClose: () => void }) {
+  const qc = useQueryClient();
+  const { data: allStudents = [] } = useQuery({
+    queryKey: ["roster-all-students"],
+    queryFn: async () => (await supabase.from("students").select("id, full_name").eq("status", "active").order("full_name")).data ?? [],
+  });
+  const { data: enrolled = [] } = useQuery({
+    queryKey: ["roster-enrolled", cls.id],
+    queryFn: async () => (await supabase.from("class_enrollments").select("student_id").eq("class_id", cls.id)).data ?? [],
+  });
+  const enrolledIds = new Set(enrolled.map((e: any) => e.student_id));
+
+  const toggle = useMutation({
+    mutationFn: async (studentId: string) => {
+      if (enrolledIds.has(studentId)) {
+        const { error } = await supabase.from("class_enrollments").delete().eq("class_id", cls.id).eq("student_id", studentId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("class_enrollments").insert([{ class_id: cls.id, student_id: studentId }]);
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["roster-enrolled", cls.id] }),
+    onError: (e: any) => toast.error(e.message),
+  });
+
+  return (
+    <Dialog open onOpenChange={onClose}>
+      <DialogContent>
+        <DialogHeader><DialogTitle>Class roster · {cls.section} {cls.academic_year}</DialogTitle></DialogHeader>
+        <div className="max-h-[60vh] overflow-y-auto space-y-1">
+          {allStudents.length === 0 ? (
+            <div className="text-sm text-muted-foreground p-4 text-center">No active students. Add students first.</div>
+          ) : allStudents.map((s: any) => (
+            <label key={s.id} className="flex items-center gap-3 px-3 py-2 rounded-md hover:bg-muted cursor-pointer">
+              <input type="checkbox" checked={enrolledIds.has(s.id)} onChange={() => toggle.mutate(s.id)} />
+              <span className="text-sm">{s.full_name}</span>
+            </label>
+          ))}
+        </div>
+        <DialogFooter><Button onClick={onClose}>Done</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

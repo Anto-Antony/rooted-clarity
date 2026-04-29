@@ -14,6 +14,14 @@ import Staff from "./pages/Staff";
 import Courses from "./pages/Courses";
 import Classes from "./pages/Classes";
 import Profile from "./pages/Profile";
+import Timetable from "./pages/Timetable";
+import Attendance from "./pages/Attendance";
+import Assignments from "./pages/Assignments";
+import Tests from "./pages/Tests";
+import Leaves from "./pages/Leaves";
+import Finance from "./pages/Finance";
+import Notifications from "./pages/Notifications";
+import AuditLog from "./pages/AuditLog";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -42,6 +50,14 @@ const App = () => (
               <Route path="staff" element={<RequireAuth roles={["admin", "head_staff"]}><Staff /></RequireAuth>} />
               <Route path="courses" element={<RequireAuth roles={["admin", "head_staff"]}><Courses /></RequireAuth>} />
               <Route path="classes" element={<RequireAuth roles={["admin", "head_staff"]}><Classes /></RequireAuth>} />
+              <Route path="timetable" element={<Timetable />} />
+              <Route path="attendance" element={<RequireAuth roles={["admin", "head_staff", "regular_staff", "guest_staff"]}><Attendance /></RequireAuth>} />
+              <Route path="assignments" element={<Assignments />} />
+              <Route path="tests" element={<Tests />} />
+              <Route path="leaves" element={<Leaves />} />
+              <Route path="finance" element={<RequireAuth roles={["admin", "accountant", "head_staff", "student"]}><Finance /></RequireAuth>} />
+              <Route path="notifications" element={<Notifications />} />
+              <Route path="audit" element={<RequireAuth roles={["admin"]}><AuditLog /></RequireAuth>} />
               <Route path="profile" element={<Profile />} />
             </Route>
             <Route path="*" element={<NotFound />} />

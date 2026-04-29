@@ -13,6 +13,13 @@ import {
   LogOut,
   Sprout,
   Menu,
+  Calendar,
+  ClipboardCheck,
+  FileText,
+  ClipboardList,
+  Wallet,
+  CalendarOff,
+  ShieldCheck,
 } from "lucide-react";
 import { useState } from "react";
 import { cn } from "@/lib/utils";
@@ -24,6 +31,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { NotificationBell } from "@/components/layout/NotificationBell";
 
 interface NavItem {
   label: string;
@@ -39,6 +47,13 @@ const NAV: NavItem[] = [
   { label: "Staff", to: "/app/staff", icon: Briefcase, roles: ["admin", "head_staff"] },
   { label: "Courses", to: "/app/courses", icon: BookOpen, roles: ["admin", "head_staff"] },
   { label: "Classes", to: "/app/classes", icon: Layers, roles: ["admin", "head_staff"] },
+  { label: "Timetable", to: "/app/timetable", icon: Calendar },
+  { label: "Attendance", to: "/app/attendance", icon: ClipboardCheck, roles: ["admin", "head_staff", "regular_staff", "guest_staff"] },
+  { label: "Assignments", to: "/app/assignments", icon: FileText },
+  { label: "Tests & Results", to: "/app/tests", icon: ClipboardList },
+  { label: "Leaves", to: "/app/leaves", icon: CalendarOff },
+  { label: "Finance", to: "/app/finance", icon: Wallet, roles: ["admin", "accountant", "student"] },
+  { label: "Audit log", to: "/app/audit", icon: ShieldCheck, roles: ["admin"] },
   { label: "Profile", to: "/app/profile", icon: UserCircle },
 ];
 
@@ -140,6 +155,7 @@ export function AppShell() {
             <Menu className="h-5 w-5" />
           </Button>
           <div className="flex-1" />
+          <NotificationBell />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="gap-2 h-9">
