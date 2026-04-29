@@ -50,6 +50,14 @@ const App = () => (
               <Route path="staff" element={<RequireAuth roles={["admin", "head_staff"]}><Staff /></RequireAuth>} />
               <Route path="courses" element={<RequireAuth roles={["admin", "head_staff"]}><Courses /></RequireAuth>} />
               <Route path="classes" element={<RequireAuth roles={["admin", "head_staff"]}><Classes /></RequireAuth>} />
+              <Route path="timetable" element={<Timetable />} />
+              <Route path="attendance" element={<RequireAuth roles={["admin", "head_staff", "regular_staff", "guest_staff"]}><Attendance /></RequireAuth>} />
+              <Route path="assignments" element={<Assignments />} />
+              <Route path="tests" element={<Tests />} />
+              <Route path="leaves" element={<Leaves />} />
+              <Route path="finance" element={<RequireAuth roles={["admin", "accountant", "head_staff", "student"]}><Finance /></RequireAuth>} />
+              <Route path="notifications" element={<Notifications />} />
+              <Route path="audit" element={<RequireAuth roles={["admin"]}><AuditLog /></RequireAuth>} />
               <Route path="profile" element={<Profile />} />
             </Route>
             <Route path="*" element={<NotFound />} />
