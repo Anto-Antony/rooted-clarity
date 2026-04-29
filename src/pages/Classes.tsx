@@ -32,6 +32,7 @@ export default function Classes() {
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<ClassRow | null>(null);
+  const [rosterFor, setRosterFor] = useState<ClassRow | null>(null);
   const [form, setForm] = useState({
     course_id: "",
     section: "",
