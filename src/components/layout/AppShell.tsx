@@ -155,6 +155,7 @@ export function AppShell() {
             <Menu className="h-5 w-5" />
           </Button>
           <div className="flex-1" />
+          <NotificationBell />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="gap-2 h-9">
