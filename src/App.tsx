@@ -20,6 +20,7 @@ import Assignments from "./pages/Assignments";
 import Tests from "./pages/Tests";
 import Leaves from "./pages/Leaves";
 import Finance from "./pages/Finance";
+import Payroll from "./pages/Payroll";
 import Notifications from "./pages/Notifications";
 import AuditLog from "./pages/AuditLog";
 import NotFound from "./pages/NotFound";
@@ -56,6 +57,7 @@ const App = () => (
               <Route path="tests" element={<Tests />} />
               <Route path="leaves" element={<Leaves />} />
               <Route path="finance" element={<RequireAuth roles={["admin", "accountant", "head_staff", "student"]}><Finance /></RequireAuth>} />
+              <Route path="payroll" element={<RequireAuth roles={["admin", "accountant", "head_staff", "regular_staff", "guest_staff"]}><Payroll /></RequireAuth>} />
               <Route path="notifications" element={<Notifications />} />
               <Route path="audit" element={<RequireAuth roles={["admin"]}><AuditLog /></RequireAuth>} />
               <Route path="profile" element={<Profile />} />
