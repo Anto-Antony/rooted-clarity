@@ -20,6 +20,7 @@ import Assignments from "./pages/Assignments";
 import Tests from "./pages/Tests";
 import Leaves from "./pages/Leaves";
 import Finance from "./pages/Finance";
+import Payroll from "./pages/Payroll";
 import Notifications from "./pages/Notifications";
 import AuditLog from "./pages/AuditLog";
 import NotFound from "./pages/NotFound";
