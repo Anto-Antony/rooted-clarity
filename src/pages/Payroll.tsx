@@ -187,7 +187,7 @@ export default function Payroll() {
         notes: form.notes,
       });
       if (!parsed.success) throw new Error(parsed.error.issues[0].message);
-      const payload = {
+      const payload: any = {
         ...parsed.data,
         notes: parsed.data.notes || null,
       };
@@ -200,7 +200,7 @@ export default function Payroll() {
       } else {
         const { error } = await supabase
           .from("payroll_invoices")
-          .insert([{ ...payload, created_by: user?.id ?? undefined }]);
+          .insert([{ ...payload, created_by: user?.id ?? null }]);
         if (error) throw error;
       }
     },
