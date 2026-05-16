@@ -200,7 +200,7 @@ export default function Payroll() {
       } else {
         const { error } = await supabase
           .from("payroll_invoices")
-          .insert({ ...payload, created_by: user?.id ?? null });
+          .insert([{ ...payload, created_by: user?.id ?? undefined }]);
         if (error) throw error;
       }
     },
