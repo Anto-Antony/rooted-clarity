@@ -33,7 +33,7 @@ const fmt = (n: number | null | undefined) =>
 
 export default function Payroll() {
   const { user, roles } = useAuth();
-  const isManager = hasAnyRole(roles, ["admin", "accountant", "head_staff"]);
+  const isManager = hasAnyRole(roles, ["admin", "accountant"]);
 
   // Resolve current user's staff profile (for self-service staff)
   const { data: myStaff } = useQuery({
