@@ -120,7 +120,12 @@ export default function Auth() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="li-password">Password</Label>
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="li-password">Password</Label>
+                    <Link to="/auth/forgot-password" className="text-xs text-primary hover:underline">
+                      Forgot password?
+                    </Link>
+                  </div>
                   <Input
                     id="li-password"
                     type="password"
