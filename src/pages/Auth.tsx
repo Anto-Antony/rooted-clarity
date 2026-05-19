@@ -73,7 +73,7 @@ export default function Auth() {
       email: emailR.data,
       password: pwR.data,
       options: {
-        emailRedirectTo: `${window.location.origin}/app`,
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
         data: { full_name: nameR.data },
       },
     });
@@ -84,7 +84,8 @@ export default function Auth() {
       else toast.error(error.message);
       return;
     }
-    toast.success("Account created. You're signed in.");
+    toast.success("Account created. Check your inbox to verify your email.");
+    navigate("/auth/verify-email", { state: { email: emailR.data } });
   };
 
   return (
