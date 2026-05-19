@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,10 +24,10 @@ export default function Auth() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) navigate("/app", { replace: true });
+      if (session?.user?.email_confirmed_at) navigate("/app", { replace: true });
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
-      if (s) navigate("/app", { replace: true });
+      if (s?.user?.email_confirmed_at) navigate("/app", { replace: true });
     });
     return () => sub.subscription.unsubscribe();
   }, [navigate]);
@@ -46,6 +46,11 @@ export default function Auth() {
     });
     setLoading(false);
     if (error) {
+      if (/email not confirmed/i.test(error.message)) {
+        toast.error("Please verify your email to continue.");
+        navigate("/auth/verify-email", { state: { email: emailR.data } });
+        return;
+      }
       toast.error(error.message === "Invalid login credentials"
         ? "Invalid email or password."
         : error.message);
