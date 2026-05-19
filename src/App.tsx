@@ -7,6 +7,11 @@ import { AuthProvider } from "@/hooks/useAuth";
 import { RequireAuth } from "@/components/auth/RequireAuth";
 import { AppShell } from "@/components/layout/AppShell";
 import Auth from "./pages/Auth";
+import VerifyEmail from "./pages/auth/VerifyEmail";
+import ForgotPassword from "./pages/auth/ForgotPassword";
+import ResetPassword from "./pages/auth/ResetPassword";
+import ResetSuccess from "./pages/auth/ResetSuccess";
+import AuthCallback from "./pages/auth/AuthCallback";
 import Dashboard from "./pages/Dashboard";
 import Users from "./pages/Users";
 import Students from "./pages/Students";
@@ -37,6 +42,11 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Navigate to="/app" replace />} />
             <Route path="/auth" element={<Auth />} />
+            <Route path="/auth/verify-email" element={<VerifyEmail />} />
+            <Route path="/auth/forgot-password" element={<ForgotPassword />} />
+            <Route path="/auth/reset-password" element={<ResetPassword />} />
+            <Route path="/auth/reset-success" element={<ResetSuccess />} />
+            <Route path="/auth/callback" element={<AuthCallback />} />
             <Route
               path="/app"
               element={
