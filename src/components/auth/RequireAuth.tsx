@@ -14,6 +14,9 @@ export function RequireAuth({ children, roles }: { children: ReactNode; roles?: 
     );
   }
   if (!user) return <Navigate to="/auth" state={{ from: location }} replace />;
+  if (!user.email_confirmed_at) {
+    return <Navigate to="/auth/verify-email" state={{ email: user.email }} replace />;
+  }
   if (roles && roles.length && !hasAnyRole(userRoles, roles)) {
     return <Navigate to="/app" replace />;
   }

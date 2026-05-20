@@ -25,6 +25,8 @@ const staffSchema = z.object({
 
 type Staff = {
   id: string;
+
+  user_id: string | null;
   full_name: string;
   email: string | null;
   phone: string | null;
@@ -34,7 +36,26 @@ type Staff = {
 };
 type StaffSubject = { id: string; staff_id: string; subject: string };
 
-const emptyForm = { full_name: "", email: "", phone: "", designation: "", department: "", status: "active" };
+const emptyForm = {
+  full_name: "",
+  user_id: null as string | null,
+  email: "",
+  phone: "",
+  designation: "",
+  department: "",
+  status: "active",
+};
+
+const NO_LINK = "__none__";
+
+const STAFF_LINK_ROLES = ["head_staff", "regular_staff", "guest_staff", "accountant"] as const;
+type StaffLinkRole = (typeof STAFF_LINK_ROLES)[number];
+
+// Auth-account candidate list for staff.user_id linking
+// (Uses user_roles join table; excludes accounts with role = admin)
+type UserRoleRow = { user_id: string; role: string };
+
+type ProfileLite = { id: string; full_name: string; email: string | null };
 
 export default function Staff() {
   const qc = useQueryClient();
@@ -49,11 +70,68 @@ export default function Staff() {
   const { data: staff = [], isLoading } = useQuery({
     queryKey: ["staff"],
     queryFn: async () => {
-      const { data, error } = await supabase.from("staff").select("*").order("created_at", { ascending: false });
+      const { data, error } = await supabase
+        .from("staff")
+        .select("*")
+        .order("created_at", { ascending: false });
       if (error) throw error;
       return data as Staff[];
     },
   });
+
+  // Candidate selection for staff.user_id linking:
+  // - include accounts with role in (head_staff, regular_staff, guest_staff, accountant)
+  // - exclude any user that also has role = admin
+  const { data: authCandidates = [] } = useQuery({
+    queryKey: ["staff-auth-candidates"],
+    queryFn: async () => {
+      const desiredRoles = Array.from(STAFF_LINK_ROLES);
+
+      // Users with desired roles (may include admin users; we'll filter those out)
+      const { data: desiredRows, error: e1 } = await supabase
+        .from("user_roles")
+        .select("user_id, role")
+        .in("role", desiredRoles);
+      if (e1) throw e1;
+
+      // Users with admin role to exclude
+      const { data: adminRows, error: e2 } = await supabase
+        .from("user_roles")
+        .select("user_id")
+        .eq("role", "admin");
+      if (e2) throw e2;
+
+      const adminUserIds = new Set((adminRows ?? []).map((r) => r.user_id));
+
+      const candidatesMap = new Map<string, ProfileLite>();
+
+      // ProfileLite shape is used only if we can join to profiles.
+      // If your schema doesn't have profiles.full_name/email, remove this join.
+      const candidateUserIds = Array.from(
+        new Set((desiredRows ?? []).map((r) => r.user_id))
+      ).filter((uid) => !adminUserIds.has(uid));
+
+      if (candidateUserIds.length === 0) return [] as ProfileLite[];
+
+      // Fetch lightweight profile info for display.
+      // If your auth user table is different, adjust the table/columns.
+      const { data: profiles, error: e3 } = await supabase
+        .from("profiles")
+        .select("id, full_name, email")
+        .in("id", candidateUserIds);
+      if (e3) throw e3;
+
+      for (const p of (profiles ?? []) as ProfileLite[]) {
+        candidatesMap.set(p.id, p);
+      }
+
+      // Preserve deterministic ordering by user_id list
+      return candidateUserIds
+        .map((id) => candidatesMap.get(id))
+        .filter(Boolean) as ProfileLite[];
+    },
+  });
+
 
   const { data: allSubjects = [] } = useQuery({
     queryKey: ["staff_subjects"],
@@ -93,6 +171,7 @@ export default function Staff() {
     setEditing(s);
     setForm({
       full_name: s.full_name,
+      user_id: s.user_id,
       email: s.email ?? "",
       phone: s.phone ?? "",
       designation: s.designation ?? "",
@@ -108,7 +187,9 @@ export default function Staff() {
     mutationFn: async () => {
       const parsed = staffSchema.safeParse(form);
       if (!parsed.success) throw new Error(parsed.error.issues[0].message);
+
       const payload = {
+        user_id: form.user_id ?? null,
         full_name: parsed.data.full_name,
         email: parsed.data.email || null,
         phone: parsed.data.phone || null,
@@ -270,6 +351,30 @@ export default function Staff() {
                 <SelectContent>
                   <SelectItem value="active">Active</SelectItem>
                   <SelectItem value="inactive">Inactive</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Linked auth account</Label>
+              <Select
+                value={form.user_id ?? NO_LINK}
+                onValueChange={(v) =>
+                  setForm({
+                    ...form,
+                    user_id: v === NO_LINK ? null : v,
+                  })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select auth account (optional)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_LINK}>Unlinked (no auth account)</SelectItem>
+                  {authCandidates.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.full_name} {c.email ? `(${c.email})` : ""}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>

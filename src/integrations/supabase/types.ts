@@ -440,6 +440,104 @@ export type Database = {
         }
         Relationships: []
       }
+      payroll_invoices: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          deductions: number | null
+          due_date: string
+          gross_amount: number
+          id: string
+          invoice_number: string
+          issued_date: string
+          net_amount: number
+          notes: string | null
+          payroll_type: Database["public"]["Enums"]["payroll_type"]
+          period_end: string
+          period_start: string
+          staff_id: string
+          status: Database["public"]["Enums"]["payroll_status"]
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          deductions?: number | null
+          due_date: string
+          gross_amount?: number
+          id?: string
+          invoice_number?: string
+          issued_date?: string
+          net_amount?: number
+          notes?: string | null
+          payroll_type?: Database["public"]["Enums"]["payroll_type"]
+          period_end: string
+          period_start: string
+          staff_id: string
+          status?: Database["public"]["Enums"]["payroll_status"]
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          deductions?: number | null
+          due_date?: string
+          gross_amount?: number
+          id?: string
+          invoice_number?: string
+          issued_date?: string
+          net_amount?: number
+          notes?: string | null
+          payroll_type?: Database["public"]["Enums"]["payroll_type"]
+          period_end?: string
+          period_start?: string
+          staff_id?: string
+          status?: Database["public"]["Enums"]["payroll_status"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      payroll_payments: {
+        Row: {
+          amount: number
+          created_at: string
+          id: string
+          method: string
+          paid_on: string
+          payroll_invoice_id: string
+          recorded_by: string | null
+          reference: string | null
+        }
+        Insert: {
+          amount: number
+          created_at?: string
+          id?: string
+          method?: string
+          paid_on?: string
+          payroll_invoice_id: string
+          recorded_by?: string | null
+          reference?: string | null
+        }
+        Update: {
+          amount?: number
+          created_at?: string
+          id?: string
+          method?: string
+          paid_on?: string
+          payroll_invoice_id?: string
+          recorded_by?: string | null
+          reference?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "payroll_payments_payroll_invoice_id_fkey"
+            columns: ["payroll_invoice_id"]
+            isOneToOne: false
+            referencedRelation: "payroll_invoices"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           address: string | null
@@ -742,6 +840,8 @@ export type Database = {
       attendance_status: "present" | "absent" | "late" | "excused"
       invoice_status: "pending" | "partial" | "paid" | "overdue" | "cancelled"
       leave_status: "pending" | "approved" | "rejected"
+      payroll_status: "draft" | "issued" | "paid" | "cancelled"
+      payroll_type: "daily" | "weekly" | "monthly" | "one_time"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -880,6 +980,8 @@ export const Constants = {
       attendance_status: ["present", "absent", "late", "excused"],
       invoice_status: ["pending", "partial", "paid", "overdue", "cancelled"],
       leave_status: ["pending", "approved", "rejected"],
+      payroll_status: ["draft", "issued", "paid", "cancelled"],
+      payroll_type: ["daily", "weekly", "monthly", "one_time"],
     },
   },
 } as const

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { PageHeader } from "@/components/shared/PageHeader";
@@ -8,10 +8,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import {
-  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger,
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { GraduationCap, Plus, Lock } from "lucide-react";
+import { GraduationCap, Plus, Lock, Link2, Link2Off } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
 import { useAuth, hasAnyRole } from "@/hooks/useAuth";
@@ -38,7 +38,12 @@ type Student = {
   address: string | null;
   status: string;
   locked_at: string | null;
+  user_id: string | null;
 };
+
+type ProfileLite = { id: string; full_name: string; email: string | null };
+
+const NO_LINK = "__none__";
 
 const emptyForm = {
   full_name: "",
@@ -61,6 +66,7 @@ export default function Students() {
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Student | null>(null);
   const [form, setForm] = useState(emptyForm);
+  const [linkedUserId, setLinkedUserId] = useState<string>(NO_LINK);
 
   const { data: students = [], isLoading } = useQuery({
     queryKey: ["students"],
@@ -74,14 +80,58 @@ export default function Students() {
     },
   });
 
+  // Fetch candidate auth accounts: profiles holding the `student` role.
+  const { data: studentAccounts = [] } = useQuery({
+    queryKey: ["student-role-accounts"],
+    enabled: canManage,
+    queryFn: async () => {
+      const { data: roleRows, error: e1 } = await supabase
+        .from("user_roles")
+        .select("user_id")
+        .eq("role", "student");
+      if (e1) throw e1;
+      const ids = Array.from(new Set((roleRows ?? []).map((r) => r.user_id)));
+      if (ids.length === 0) return [] as ProfileLite[];
+      const { data: profs, error: e2 } = await supabase
+        .from("profiles")
+        .select("id, full_name, email")
+        .in("id", ids);
+      if (e2) throw e2;
+      return (profs ?? []) as ProfileLite[];
+    },
+  });
+
+  const linkedUserIds = useMemo(
+    () => new Set(students.map((s) => s.user_id).filter(Boolean) as string[]),
+    [students]
+  );
+
+  // For "New admission": only profiles not yet linked to any student row.
+  const unlinkedAccounts = useMemo(
+    () => studentAccounts.filter((p) => !linkedUserIds.has(p.id)),
+    [studentAccounts, linkedUserIds]
+  );
+
+  const profilesById = useMemo(() => {
+    const m: Record<string, ProfileLite> = {};
+    for (const p of studentAccounts) m[p.id] = p;
+    return m;
+  }, [studentAccounts]);
+
   const filtered = students.filter((s) => {
     const q = search.trim().toLowerCase();
-    return !q || s.full_name.toLowerCase().includes(q) || (s.email ?? "").toLowerCase().includes(q) || (s.program ?? "").toLowerCase().includes(q);
+    return (
+      !q ||
+      s.full_name.toLowerCase().includes(q) ||
+      (s.email ?? "").toLowerCase().includes(q) ||
+      (s.program ?? "").toLowerCase().includes(q)
+    );
   });
 
   const openNew = () => {
     setEditing(null);
     setForm(emptyForm);
+    setLinkedUserId(NO_LINK);
     setOpen(true);
   };
 
@@ -97,13 +147,40 @@ export default function Students() {
       address: s.address ?? "",
       status: s.status,
     });
+    setLinkedUserId(s.user_id ?? NO_LINK);
     setOpen(true);
   };
+
+  // When admin picks an account in "New admission", prefill name/email from profile.
+  const onPickAccount = (val: string) => {
+    setLinkedUserId(val);
+    if (val !== NO_LINK) {
+      const p = profilesById[val];
+      if (p) {
+        setForm((f) => ({
+          ...f,
+          full_name: f.full_name || p.full_name || "",
+          email: f.email || p.email || "",
+        }));
+      }
+    }
+  };
+
+  // Edit mode: which accounts can be assigned? Unlinked + the one already assigned.
+  const editAssignableAccounts = useMemo(() => {
+    if (!editing) return unlinkedAccounts;
+    const current = editing.user_id ? profilesById[editing.user_id] : null;
+    return current && !unlinkedAccounts.find((p) => p.id === current.id)
+      ? [current, ...unlinkedAccounts]
+      : unlinkedAccounts;
+  }, [editing, unlinkedAccounts, profilesById]);
 
   const save = useMutation({
     mutationFn: async () => {
       const parsed = studentSchema.safeParse(form);
       if (!parsed.success) throw new Error(parsed.error.issues[0].message);
+      const userIdValue = linkedUserId === NO_LINK ? null : linkedUserId;
+
       const payload = {
         full_name: parsed.data.full_name,
         email: parsed.data.email || null,
@@ -113,7 +190,9 @@ export default function Students() {
         program: parsed.data.program || null,
         address: parsed.data.address || null,
         status: parsed.data.status,
+        user_id: userIdValue,
       };
+
       if (editing) {
         if (editing.locked_at && !canUnlock) {
           throw new Error("This record is locked. Only Admin can edit a locked student record.");
@@ -121,14 +200,16 @@ export default function Students() {
         const { error } = await supabase.from("students").update(payload).eq("id", editing.id);
         if (error) throw error;
       } else {
-        // New admission: lock the record on creation (admission finalized).
-        const { error } = await supabase.from("students").insert({ ...payload, locked_at: new Date().toISOString() });
+        const { error } = await supabase
+          .from("students")
+          .insert({ ...payload, locked_at: new Date().toISOString() });
         if (error) throw error;
       }
     },
     onSuccess: () => {
       toast.success(editing ? "Student updated." : "Student admitted and record locked.");
       qc.invalidateQueries({ queryKey: ["students"] });
+      qc.invalidateQueries({ queryKey: ["student-role-accounts"] });
       setOpen(false);
     },
     onError: (e: any) => toast.error(e.message),
@@ -175,6 +256,7 @@ export default function Students() {
                   <th className="px-4 py-3 font-medium">Name</th>
                   <th className="px-4 py-3 font-medium">Program</th>
                   <th className="px-4 py-3 font-medium">Admission</th>
+                  <th className="px-4 py-3 font-medium">Account</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                   <th className="px-4 py-3 font-medium text-right">Actions</th>
                 </tr>
@@ -191,6 +273,17 @@ export default function Students() {
                     </td>
                     <td className="px-4 py-3 text-muted-foreground">{s.program ?? "—"}</td>
                     <td className="px-4 py-3 text-muted-foreground">{s.admission_date}</td>
+                    <td className="px-4 py-3">
+                      {s.user_id ? (
+                        <span className="text-xs bg-success/10 text-success px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                          <Link2 className="h-3 w-3" /> Linked
+                        </span>
+                      ) : (
+                        <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                          <Link2Off className="h-3 w-3" /> Unlinked
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-3">
                       <span
                         className={
@@ -222,20 +315,49 @@ export default function Students() {
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-w-2xl">
           <DialogHeader>
-            <DialogTitle>
-              {editing ? "Edit student" : "New admission"}
-            </DialogTitle>
+            <DialogTitle>{editing ? "Edit student" : "New admission"}</DialogTitle>
             <DialogDescription>
               {editing
                 ? editing.locked_at
                   ? "This record is locked. Changes are audited; only Admin may edit."
                   : "Update student details."
-                : "Register a new student. The record will be locked after admission."}
+                : "Register a new student. Link to a sign-up account so they can log in and see their data."}
             </DialogDescription>
           </DialogHeader>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <section className="md:col-span-2">
+              <div className="ra-section-title mb-2">Account linkage</div>
+              <Label className="text-xs text-muted-foreground">
+                Pick the sign-up account (must already exist and have the Student role assigned in Users).
+              </Label>
+              <Select value={linkedUserId} onValueChange={onPickAccount}>
+                <SelectTrigger className="mt-2">
+                  <SelectValue placeholder="Select student account" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={NO_LINK}>No linked account (paper admission)</SelectItem>
+                  {editAssignableAccounts.length === 0 ? (
+                    <SelectItem value="__empty__" disabled>
+                      No unlinked student accounts available
+                    </SelectItem>
+                  ) : (
+                    editAssignableAccounts.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.full_name || "(no name)"} — {p.email ?? "no email"}
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              {linkedUserId === NO_LINK && (
+                <p className="text-xs text-muted-foreground mt-1">
+                  Without a linked account the student cannot log in to view their record.
+                </p>
+              )}
+            </section>
+
+            <section className="md:col-span-2 mt-2">
               <div className="ra-section-title mb-2">Personal</div>
             </section>
             <div className="space-y-2">

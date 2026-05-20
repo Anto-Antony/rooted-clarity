@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -24,10 +24,10 @@ export default function Auth() {
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session) navigate("/app", { replace: true });
+      if (session?.user?.email_confirmed_at) navigate("/app", { replace: true });
     });
     const { data: sub } = supabase.auth.onAuthStateChange((_e, s) => {
-      if (s) navigate("/app", { replace: true });
+      if (s?.user?.email_confirmed_at) navigate("/app", { replace: true });
     });
     return () => sub.subscription.unsubscribe();
   }, [navigate]);
@@ -46,6 +46,11 @@ export default function Auth() {
     });
     setLoading(false);
     if (error) {
+       if (/email not confirmed/i.test(error.message)) {
+        toast.error("Please verify your email to continue.");
+        navigate("/auth/verify-email", { state: { email: emailR.data } });
+        return;
+      }
       toast.error(error.message === "Invalid login credentials"
         ? "Invalid email or password."
         : error.message);
@@ -68,7 +73,7 @@ export default function Auth() {
       email: emailR.data,
       password: pwR.data,
       options: {
-        emailRedirectTo: `${window.location.origin}/app`,
+        emailRedirectTo: `${window.location.origin}/auth/callback`,
         data: { full_name: nameR.data },
       },
     });
@@ -79,8 +84,10 @@ export default function Auth() {
       else toast.error(error.message);
       return;
     }
-    toast.success("Account created. You're signed in.");
-  };
+
+    toast.success("Account created. Check your inbox to verify your email.");
+    navigate("/auth/verify-email", { state: { email: emailR.data } });
+    };
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-10 bg-background">
@@ -114,8 +121,13 @@ export default function Auth() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="li-password">Password</Label>
-                  <Input
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="li-password">Password</Label>
+                    <Link to="/auth/forgot-password" className="text-xs text-primary hover:underline">
+                      Forgot password?
+                    </Link>
+                  </div>                 
+                   <Input
                     id="li-password"
                     type="password"
                     autoComplete="current-password"
