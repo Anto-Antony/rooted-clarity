@@ -83,7 +83,7 @@ const Navbar = () => {
                 </a>
               ))}
               <a
-                href="/auth"
+                href="\auth"
                 className="flex items-center justify-center gap-2 bg-gradient-gold text-primary font-semibold px-5 py-3 rounded-lg mt-2"
               >
                 <Login className="w-4 h-4" />
