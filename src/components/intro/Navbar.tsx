@@ -83,11 +83,11 @@ const Navbar = () => {
                 </a>
               ))}
               <a
-                href="tel:+917034719720"
+                href="\auth"
                 className="flex items-center justify-center gap-2 bg-gradient-gold text-primary font-semibold px-5 py-3 rounded-lg mt-2"
               >
-                <Phone className="w-4 h-4" />
-                Enquire Now
+                <Login className="w-4 h-4" />
+                Enrol Now
               </a>
             </div>
           </motion.div>
