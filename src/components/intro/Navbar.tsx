@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X, Phone, LogIn } from "lucide-react";
+import { Menu, X, LogIn } from "lucide-react";
 import logo from "@/assets/logo.webp";
 
 const navLinks = [
@@ -86,7 +86,7 @@ const Navbar = () => {
                 href="\auth"
                 className="flex items-center justify-center gap-2 bg-gradient-gold text-primary font-semibold px-5 py-3 rounded-lg mt-2"
               >
-                <Login className="w-4 h-4" />
+                <LogIn className="w-4 h-4" />
                 Enrol Now
               </a>
             </div>
