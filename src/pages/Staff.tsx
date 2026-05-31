@@ -25,7 +25,6 @@ const staffSchema = z.object({
 
 type Staff = {
   id: string;
-
   user_id: string | null;
   full_name: string;
   email: string | null;
@@ -55,7 +54,14 @@ type StaffLinkRole = (typeof STAFF_LINK_ROLES)[number];
 // (Uses user_roles join table; excludes accounts with role = admin)
 type UserRoleRow = { user_id: string; role: string };
 
-type ProfileLite = { id: string; full_name: string; email: string | null };
+type ProfileLite = {
+  id: string;
+  full_name: string;
+  email: string | null;
+  phone: string | null;
+  // returned by join: user_roles!inner(role)
+  user_roles?: { role: string }[];
+};
 
 export default function Staff() {
   const qc = useQueryClient();
@@ -117,11 +123,13 @@ export default function Staff() {
       // If your auth user table is different, adjust the table/columns.
       const { data: profiles, error: e3 } = await supabase
         .from("profiles")
-        .select("id, full_name, email")
+        .select("id, full_name, email, phone")
         .in("id", candidateUserIds);
       if (e3) throw e3;
 
-      for (const p of (profiles ?? []) as ProfileLite[]) {
+      // Supabase typing sometimes can't infer joined shape; validate via runtime guards.
+      for (const p of (profiles ?? []) as unknown as ProfileLite[]) {
+        if (!p?.id) continue;
         candidatesMap.set(p.id, p);
       }
 
@@ -181,6 +189,27 @@ export default function Staff() {
     setSubjects(subjectsByStaff[s.id] ?? []);
     setNewSubject("");
     setOpen(true);
+  };
+
+  const onPickAuthCandidate = (userId: string) => {
+    setForm((f) => ({
+      ...f,
+      user_id: userId === NO_LINK ? null : userId,
+    }));
+    if (userId === NO_LINK) return;
+
+    const p = authCandidates.find((c) => c.id === userId);
+    if (!p) return;
+
+    const derivedRole = p.user_roles?.[0]?.role;
+
+    setForm((f) => ({
+      ...f,
+      full_name: f.full_name ? f.full_name : p.full_name || "",
+      email: f.email ? f.email : p.email || "",
+      phone: f.phone ? f.phone : p.phone || "",
+      designation: f.designation ? f.designation : (derivedRole ?? ""),
+    }));
   };
 
   const save = useMutation({
@@ -358,12 +387,7 @@ export default function Staff() {
               <Label>Linked auth account</Label>
               <Select
                 value={form.user_id ?? NO_LINK}
-                onValueChange={(v) =>
-                  setForm({
-                    ...form,
-                    user_id: v === NO_LINK ? null : v,
-                  })
-                }
+                onValueChange={(v) => onPickAuthCandidate(v)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select auth account (optional)" />

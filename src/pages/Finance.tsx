@@ -14,6 +14,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Wallet, Plus, Receipt } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
+import { jsPDF } from "jspdf";
+import autoTable from "jspdf-autotable";
+import * as XLSX from "xlsx";
 
 type FeeStruct = { id: string; name: string; program: string | null; amount: number; frequency: string; active: boolean };
 type Invoice = { id: string; invoice_number: string; student_id: string; amount: number; amount_paid: number; due_date: string; status: string; notes: string | null };
@@ -25,6 +28,7 @@ export default function Finance() {
   const canManage = hasAnyRole(roles, ["admin", "accountant"]);
   const isStudent = hasAnyRole(roles, ["student"]);
   const qc = useQueryClient();
+  
 
   const { data: structures = [] } = useQuery({
     queryKey: ["fee-structures"],
@@ -98,6 +102,93 @@ export default function Finance() {
     ? invoices.filter(i => i.student_id === myStudent?.id)
     : invoices;
 
+  // New: export state + export function
+  const [exportFormat, setExportFormat] = useState<string>("pdf");
+
+  const exportInvoices = (formatType: string = exportFormat) => {
+    try {
+      const rows = visibleInvoices.map(i => ({
+        invoice_number: i.invoice_number,
+        student: studentById[i.student_id] ?? "—",
+        amount: Number(i.amount).toFixed(2),
+        paid: Number(i.amount_paid).toFixed(2),
+        due: format(new Date(i.due_date), "PP"),
+        status: i.status,
+      }));
+
+      const filenameBase = `invoices_${new Date().toISOString().slice(0,19).replace(/[:T]/g, "-")}`;
+
+      if (formatType === "pdf") {
+        const doc = new jsPDF();
+        const heading = "Rooted Academy";
+        const title = "Invoice Report";
+
+        // Get page width
+        const pageWidth = doc.internal.pageSize.getWidth();
+
+        // Main heading
+        doc.setFontSize(16);
+        doc.setFont("helvetica", "bold");
+        doc.text(heading, pageWidth / 2, 20, { align: "center" });
+
+        doc.setFontSize(12);
+        
+        doc.setFontSize(12);
+        doc.setFont("helvetica", "normal");
+        doc.text(title, pageWidth / 2, 28, { align: "center" });
+
+        const head = [["Invoice #", "Student", "Amount", "Paid", "Due", "Status"]];
+        const body = rows.map(r => [r.invoice_number, r.student, r.amount, r.paid, r.due, r.status]);
+        // start the table below the title
+        autoTable(doc, { head, body, startY: 36 });
+        doc.save(`${filenameBase}.pdf`);
+        toast.success("PDF downloaded");
+        return;
+      }
+
+      // Use XLSX for spreadsheet and CSV
+      const ws = XLSX.utils.json_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Invoices");
+
+      if (formatType === "xlsx") {
+        XLSX.writeFile(wb, `${filenameBase}.xlsx`);
+        toast.success("Excel file downloaded");
+        return;
+      }
+
+      if (formatType === "csv") {
+        const csv = XLSX.utils.sheet_to_csv(ws);
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${filenameBase}.csv`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        URL.revokeObjectURL(url);
+        toast.success("CSV downloaded");
+        return;
+      }
+
+      // fallback: JSON download
+      const jsonBlob = new Blob([JSON.stringify(rows, null, 2)], { type: "application/json" });
+      const jsonUrl = URL.createObjectURL(jsonBlob);
+      const a = document.createElement("a");
+      a.href = jsonUrl;
+      a.download = `${filenameBase}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(jsonUrl);
+      toast.success("JSON downloaded");
+
+    } catch (e: any) {
+      toast.error(e?.message || "Export failed");
+    }
+  };
+
   return (
     <div>
       <PageHeader title="Finance" description="Fee plans, invoices, and payments." />
@@ -108,7 +199,24 @@ export default function Finance() {
         </TabsList>
 
         <TabsContent value="invoices" className="space-y-3 mt-4">
-          {canManage && <Button onClick={() => setInvOpen(true)}><Plus className="h-4 w-4 mr-1" /> New invoice</Button>}
+          <div className="flex items-center gap-3">
+            {canManage && <Button onClick={() => setInvOpen(true)}><Plus className="h-4 w-4 mr-1" /> New invoice</Button>}
+
+            {/* Export controls */}
+            <div className="flex items-center gap-2">
+              <Select value={exportFormat} onValueChange={v => setExportFormat(v)}>
+                <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pdf">PDF</SelectItem>
+                  <SelectItem value="xlsx">Excel (.xlsx)</SelectItem>
+                  <SelectItem value="csv">CSV</SelectItem>
+                  <SelectItem value="json">JSON</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button onClick={() => exportInvoices()}><Receipt className="h-4 w-4 mr-1" /> Download</Button>
+            </div>
+          </div>
+
           {visibleInvoices.length === 0 ? <EmptyState icon={Receipt} title="No invoices" /> : (
             <div className="ra-card overflow-x-auto">
               <table className="w-full text-sm">
