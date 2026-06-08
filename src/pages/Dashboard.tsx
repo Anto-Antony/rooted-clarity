@@ -4,6 +4,7 @@ import { useAuth, hasAnyRole } from "@/hooks/useAuth";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { ROLE_LABEL } from "@/lib/roles";
 import { Users, GraduationCap, Briefcase, BookOpen, Layers } from "lucide-react";
+import { AttendanceWidgets } from "@/components/dashboard/AttendanceWidgets";
 
 function StatCard({
   icon: Icon,
@@ -92,6 +93,9 @@ export default function Dashboard() {
           </div>
         </>
       )}
+
+      <div className="ra-section-title mb-3">Attendance</div>
+      <AttendanceWidgets />
 
       <div className="ra-section-title mb-3">Your access</div>
       <div className="ra-card p-5">

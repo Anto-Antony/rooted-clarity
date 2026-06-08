@@ -91,6 +91,7 @@ export default function Timetable() {
       if (editing) {
         const { error } = await supabase.from("timetable_slots").update(payload).eq("id", editing.id);
         if (error) throw error;
+        await supabase.rpc("resync_future_sessions", { _slot_id: editing.id });
       } else {
         const { error } = await supabase.from("timetable_slots").insert([payload]);
         if (error) throw error;
@@ -101,10 +102,15 @@ export default function Timetable() {
   });
 
   const del = useMutation({
-    mutationFn: async (id: string) => { const { error } = await supabase.from("timetable_slots").delete().eq("id", id); if (error) throw error; },
+    mutationFn: async (id: string) => {
+      await supabase.rpc("resync_future_sessions", { _slot_id: id });
+      const { error } = await supabase.from("timetable_slots").delete().eq("id", id);
+      if (error) throw error;
+    },
     onSuccess: () => { toast.success("Slot removed"); qc.invalidateQueries({ queryKey: ["timetable", classId] }); },
     onError: (e: any) => toast.error(e.message),
   });
+
 
   const periods = Array.from({ length: 8 }, (_, i) => i + 1);
   const slotMap = useMemo(() => {
