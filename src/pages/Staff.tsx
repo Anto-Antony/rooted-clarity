@@ -10,9 +10,22 @@ import {
   Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Briefcase, Plus, X } from "lucide-react";
+import { Briefcase, Plus, X, Receipt } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import type { ExportFormat } from "@/utils/export/exportData";
+import { useRowSelection } from "@/components/reuse/finance/selection/useRowSelection";
+import { useSelectionExport } from "@/components/reuse/finance/export/useSelectionExport";
+
 
 const staffSchema = z.object({
   full_name: z.string().trim().min(1).max(100),
@@ -25,7 +38,6 @@ const staffSchema = z.object({
 
 type Staff = {
   id: string;
-
   user_id: string | null;
   full_name: string;
   email: string | null;
@@ -55,7 +67,14 @@ type StaffLinkRole = (typeof STAFF_LINK_ROLES)[number];
 // (Uses user_roles join table; excludes accounts with role = admin)
 type UserRoleRow = { user_id: string; role: string };
 
-type ProfileLite = { id: string; full_name: string; email: string | null };
+type ProfileLite = {
+  id: string;
+  full_name: string;
+  email: string | null;
+  phone: string | null;
+  // returned by join: user_roles!inner(role)
+  user_roles?: { role: string }[];
+};
 
 export default function Staff() {
   const qc = useQueryClient();
@@ -117,11 +136,13 @@ export default function Staff() {
       // If your auth user table is different, adjust the table/columns.
       const { data: profiles, error: e3 } = await supabase
         .from("profiles")
-        .select("id, full_name, email")
+        .select("id, full_name, email, phone")
         .in("id", candidateUserIds);
       if (e3) throw e3;
 
-      for (const p of (profiles ?? []) as ProfileLite[]) {
+      // Supabase typing sometimes can't infer joined shape; validate via runtime guards.
+      for (const p of (profiles ?? []) as unknown as ProfileLite[]) {
+        if (!p?.id) continue;
         candidatesMap.set(p.id, p);
       }
 
@@ -181,6 +202,27 @@ export default function Staff() {
     setSubjects(subjectsByStaff[s.id] ?? []);
     setNewSubject("");
     setOpen(true);
+  };
+
+  const onPickAuthCandidate = (userId: string) => {
+    setForm((f) => ({
+      ...f,
+      user_id: userId === NO_LINK ? null : userId,
+    }));
+    if (userId === NO_LINK) return;
+
+    const p = authCandidates.find((c) => c.id === userId);
+    if (!p) return;
+
+    const derivedRole = p.user_roles?.[0]?.role;
+
+    setForm((f) => ({
+      ...f,
+      full_name: f.full_name ? f.full_name : p.full_name || "",
+      email: f.email ? f.email : p.email || "",
+      phone: f.phone ? f.phone : p.phone || "",
+      designation: f.designation ? f.designation : (derivedRole ?? ""),
+    }));
   };
 
   const save = useMutation({
@@ -244,6 +286,39 @@ export default function Staff() {
     setNewSubject("");
   };
 
+  const EXPORT_FORMATS: ExportFormat[] = ["pdf", "xlsx", "csv", "json", "txt"];
+  const EXPORT_FORMAT_LABELS: Record<ExportFormat, string> = {
+    pdf: "PDF",
+    xlsx: "Excel (.xlsx)",
+    csv: "CSV",
+    txt: "TXT",
+    json: "JSON",
+  };
+
+  type StaffRow = Staff;
+
+  const selectionState = useRowSelection<StaffRow>({
+    getRowId: (r) => r.id,
+    getVisibleRows: () => filtered as StaffRow[],
+  });
+
+  const { handleExport } = useSelectionExport<StaffRow>({
+    selectionMode: selectionState.selectionMode,
+    selectedCount: selectionState.selectedCount,
+    visibleRows: filtered as StaffRow[],
+    selectedRows: selectionState.getSelectedRows(filtered as StaffRow[]),
+    filenameBase: `staff_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`,
+    mapRow: (s) => ({
+      full_name: s.full_name || "—",
+      email: s.email ?? "—",
+      phone: s.phone ?? "—",
+      designation: s.designation ?? "—",
+      department: s.department ?? "—",
+      status: s.status,
+      subjects: (subjectsByStaff[s.id] ?? []).length,
+    }),
+  });
+
   return (
     <div>
       <PageHeader
@@ -252,21 +327,74 @@ export default function Staff() {
         actions={<Button onClick={openNew}><Plus className="h-4 w-4 mr-1" /> Add staff</Button>}
       />
 
-      <div className="flex flex-col sm:flex-row gap-2 mb-4">
-        <Input
-          placeholder="Search name, email, designation…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="sm:max-w-xs"
-        />
-        <Select value={deptFilter} onValueChange={setDeptFilter}>
-          <SelectTrigger className="sm:w-48"><SelectValue placeholder="Department" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All departments</SelectItem>
-            {departments.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
-          </SelectContent>
-        </Select>
+
+      <div className="flex flex-col sm:flex-row gap-2 mb-4 sm:items-center">
+        <div className="flex flex-col sm:flex-row gap-2">
+          <Input
+            placeholder="Search name, email, designation…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="sm:max-w-xs"
+          />
+          <Select value={deptFilter} onValueChange={setDeptFilter}>
+            <SelectTrigger className="sm:w-48"><SelectValue placeholder="Department" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All departments</SelectItem>
+              {departments.map((d) => <SelectItem key={d} value={d}>{d}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Button
+            variant={selectionState.selectionMode ? "default" : "outline"}
+            onClick={() => selectionState.enterSelectionMode()}
+          >
+            Select
+          </Button>
+
+          {selectionState.selectionMode && (
+            <Button
+              variant="ghost"
+              onClick={() => selectionState.exitSelectionMode()}
+            >
+              Cancel
+            </Button>
+          )}
+
+          {selectionState.selectionMode && (
+            <div className="text-sm text-muted-foreground">
+              {selectionState.selectedCount} records selected
+            </div>
+          )}
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="gap-2">
+                <Receipt className="h-4 w-4" />
+                <span>Download</span>
+                <span className="text-muted-foreground">▼</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuLabel>Export options</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {EXPORT_FORMATS.map((f) => (
+                <div key={f}>
+                  <DropdownMenuItem
+                    onClick={() => handleExport(f)}
+                    className="pt-2"
+                  >
+                    {EXPORT_FORMAT_LABELS[f]}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </div>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
+
 
       <div className="ra-card overflow-hidden">
         {isLoading ? (
@@ -278,6 +406,14 @@ export default function Staff() {
             <table className="w-full text-sm">
               <thead className="bg-muted/40 border-b border-border">
                 <tr className="text-left">
+                  {selectionState.selectionMode && (
+                    <th className="px-4 py-3 w-10">
+                      <Checkbox
+                        checked={selectionState.selectedAllVisible}
+                        onCheckedChange={() => selectionState.toggleSelectAllVisible()}
+                      />
+                    </th>
+                  )}
                   <th className="px-4 py-3 font-medium">Name</th>
                   <th className="px-4 py-3 font-medium">Designation</th>
                   <th className="px-4 py-3 font-medium">Department</th>
@@ -285,13 +421,23 @@ export default function Staff() {
                   <th className="px-4 py-3 font-medium text-right">Actions</th>
                 </tr>
               </thead>
+
               <tbody>
                 {filtered.map((s) => (
                   <tr key={s.id} className="border-b border-border last:border-0">
+                    {selectionState.selectionMode && (
+                      <td className="px-4 py-3 w-10">
+                        <Checkbox
+                          checked={selectionState.selectedIds.has(s.id)}
+                          onCheckedChange={() => selectionState.toggleRow(s.id)}
+                        />
+                      </td>
+                    )}
                     <td className="px-4 py-3">
                       <div className="font-medium">{s.full_name}</div>
                       <div className="text-xs text-muted-foreground">{s.email ?? "—"}</div>
                     </td>
+
                     <td className="px-4 py-3 text-muted-foreground">{s.designation ?? "—"}</td>
                     <td className="px-4 py-3 text-muted-foreground">{s.department ?? "—"}</td>
                     <td className="px-4 py-3">
@@ -358,12 +504,7 @@ export default function Staff() {
               <Label>Linked auth account</Label>
               <Select
                 value={form.user_id ?? NO_LINK}
-                onValueChange={(v) =>
-                  setForm({
-                    ...form,
-                    user_id: v === NO_LINK ? null : v,
-                  })
-                }
+                onValueChange={(v) => onPickAuthCandidate(v)}
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Select auth account (optional)" />

@@ -41,9 +41,23 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Wallet, Plus, Pencil, Trash2 } from "lucide-react";
+import { Wallet, Plus, Pencil, Trash2, Receipt } from "lucide-react";
 import { toast } from "sonner";
 import { z } from "zod";
+import type { ExportFormat } from "@/utils/export/exportData";
+import { useRowSelection } from "@/components/reuse/finance/selection/useRowSelection";
+import { useSelectionExport } from "@/components/reuse/finance/export/useSelectionExport";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+
+
 
 const PAYROLL_TYPE_LABEL: Record<string, string> = {
   daily: "Daily",
@@ -281,7 +295,59 @@ export default function Payroll() {
     setOpen(true);
   };
 
-  const colSpan = useMemo(() => (isManager ? 10 : 8), [isManager]);
+  const colSpan = useMemo(() => (isManager ? 11 : 9), [isManager]);
+
+  type PayrollRow = {
+    id: string;
+
+    invoice_number: string;
+    staff_id: string;
+    payroll_type: string;
+    period_start: string;
+    period_end: string;
+    gross_amount: number;
+    deductions: number;
+    net_amount: number;
+    due_date: string;
+    issued_date: string;
+    status: string;
+    notes: string | null;
+  };
+
+  const selectionState = useRowSelection<PayrollRow>({
+    getRowId: (r) => r.id,
+    getVisibleRows: () => (invoices ?? []) as PayrollRow[],
+  });
+
+  const { handleExport } = useSelectionExport<PayrollRow>({
+    selectionMode: selectionState.selectionMode,
+    selectedCount: selectionState.selectedCount,
+    visibleRows: (invoices ?? []) as PayrollRow[],
+    selectedRows: selectionState.getSelectedRows((invoices ?? []) as PayrollRow[]),
+    filenameBase: `payroll_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`,
+    mapRow: (inv) => ({
+      invoice_number: inv.invoice_number,
+      staff: isManager ? (staffNameById.get(inv.staff_id) ?? "Unknown") : "—",
+      payroll_type: inv.payroll_type,
+      period_start: inv.period_start,
+      period_end: inv.period_end,
+      gross_amount: inv.gross_amount,
+      deductions: inv.deductions,
+      net_amount: inv.net_amount,
+      due_date: inv.due_date,
+      status: inv.status,
+      notes: inv.notes ?? "",
+    }),
+  });
+
+  const EXPORT_FORMATS: ExportFormat[] = ["pdf", "xlsx", "csv", "json", "txt"];
+  const EXPORT_FORMAT_LABELS: Record<ExportFormat, string> = {
+    pdf: "PDF",
+    xlsx: "Excel (.xlsx)",
+    csv: "CSV",
+    txt: "TXT",
+    json: "JSON",
+  };
 
   return (
     <div>
@@ -301,6 +367,62 @@ export default function Payroll() {
         }
       />
 
+      <>
+        {(isManager || myStaff) && (
+          <div className="flex flex-col sm:flex-row gap-2 mb-4 sm:items-center">
+            <div className="flex items-center gap-2">
+              <Button
+                variant={selectionState.selectionMode ? "default" : "outline"}
+                onClick={() => selectionState.enterSelectionMode()}
+              >
+                Select
+              </Button>
+
+              {selectionState.selectionMode && (
+                <Button
+                  variant="ghost"
+                  onClick={() => selectionState.exitSelectionMode()}
+                >
+                  Cancel
+                </Button>
+              )}
+
+              {selectionState.selectionMode && (
+                <div className="text-sm text-muted-foreground">
+                  {selectionState.selectedCount} records selected
+                </div>
+              )}
+            </div>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" className="gap-2">
+                  <Receipt className="h-4 w-4" />
+                  <span>Download</span>
+                  <span className="text-muted-foreground">▼</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-64">
+                <DropdownMenuLabel>Export options</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {EXPORT_FORMATS.map((f) => (
+                  <div key={f}>
+                    <DropdownMenuItem
+                      onClick={() => handleExport(f)}
+                      className="pt-2"
+                    >
+                      {EXPORT_FORMAT_LABELS[f]}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </div>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        )}
+      </>
+
+
       {!isManager && !myStaff && (
         <EmptyState
           icon={Wallet}
@@ -314,9 +436,18 @@ export default function Payroll() {
           <Table>
             <TableHeader>
               <TableRow>
+                {selectionState.selectionMode && (
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={selectionState.selectedAllVisible}
+                      onCheckedChange={() => selectionState.toggleSelectAllVisible()}
+                    />
+                  </TableHead>
+                )}
                 <TableHead>Invoice #</TableHead>
                 {isManager && <TableHead>Staff</TableHead>}
                 <TableHead>Type</TableHead>
+
                 <TableHead>Period</TableHead>
                 <TableHead className="text-right">Gross</TableHead>
                 <TableHead className="text-right">Deductions</TableHead>
@@ -342,7 +473,16 @@ export default function Payroll() {
               ) : (
                 invoices.map((inv: any) => (
                   <TableRow key={inv.id}>
+                    {selectionState.selectionMode && (
+                      <TableCell className="w-10">
+                        <Checkbox
+                          checked={selectionState.selectedIds.has(inv.id)}
+                          onCheckedChange={() => selectionState.toggleRow(inv.id)}
+                        />
+                      </TableCell>
+                    )}
                     <TableCell className="font-mono text-xs">{inv.invoice_number}</TableCell>
+
                     <TableCell>
                       {isManager
                         ? staffNameById.get(inv.staff_id) ?? "Unknown"
