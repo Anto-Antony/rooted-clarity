@@ -8,7 +8,32 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Receipt } from "lucide-react";
+import { ExportFormat } from "@/utils/export/exportData";
+
+const EXPORT_FORMATS: ExportFormat[] = ["pdf", "xlsx", "csv", "json", "txt"];
+const EXPORT_FORMAT_LABELS: Record<ExportFormat, string> = {
+
+  pdf: "PDF",
+  xlsx: "Excel (.xlsx)",
+  csv: "CSV",
+  txt: "TXT",
+  json: "JSON",
+};
+
+import { useRowSelection } from "@/components/reuse/finance/selection/useRowSelection";
+import { useSelectionExport } from "@/components/reuse/finance/export/useSelectionExport";
+
+import {
   Dialog,
+
   DialogContent,
   DialogDescription,
   DialogFooter,
@@ -137,20 +162,100 @@ export default function Users() {
     );
   };
 
+  type UserRow = Profile;
+
+  const selectionState = useRowSelection<UserRow>({
+    getRowId: (r) => r.id,
+    getVisibleRows: () => filtered,
+  });
+
+  const selectionMode = selectionState.selectionMode;
+  const selectedCount = selectionState.selectedCount;
+
+  const userToExportRow = (p: UserRow) => ({
+    full_name: p.full_name || "—",
+    email: p.email ?? "—",
+    status: p.status,
+    roles: (rolesByUser[p.id] ?? []).map((r) => ROLE_LABEL[r]).join(", ") || "None",
+    created_at: p.created_at,
+  });
+
+  const selectedUsers = selectionState.getSelectedRows(filtered);
+
+  const { handleExport } = useSelectionExport<UserRow>({
+
+    selectionMode,
+    selectedCount,
+    visibleRows: filtered,
+    selectedRows: selectedUsers,
+    filenameBase: `users_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`,
+    mapRow: userToExportRow,
+  });
+
+
+
   return (
     <div>
       <PageHeader
+
         title="Users"
         description="Manage accounts, roles and status."
       />
 
-      <div className="flex flex-col sm:flex-row gap-2 mb-4">
-        <Input
-          placeholder="Search name or email…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="sm:max-w-xs"
-        />
+      <div className="flex flex-col sm:flex-row gap-2 mb-4 sm:items-center">
+        <div className="flex items-center gap-2">
+          <Input
+            placeholder="Search name or email…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="sm:max-w-xs"
+          />
+
+          <Button
+            variant={selectionMode ? "default" : "outline"}
+            onClick={() => selectionState.enterSelectionMode()}
+          >
+            Select
+          </Button>
+
+          {selectionMode && (
+            <Button
+              variant="ghost"
+              onClick={() => selectionState.exitSelectionMode()}
+            >
+              Cancel
+            </Button>
+          )}
+
+          {selectionMode && (
+            <div className="text-sm text-muted-foreground">
+              {selectedCount} records selected
+            </div>
+          )}
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="gap-2">
+                <Receipt className="h-4 w-4" />
+                <span>Download</span>
+                <span className="text-muted-foreground">▼</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuLabel>Export options</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {EXPORT_FORMATS.map((f) => (
+                <div key={f}>
+                  <DropdownMenuItem onClick={() => handleExport(f)} className="pt-2">
+                    {EXPORT_FORMAT_LABELS[f]}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </div>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
         <Select value={roleFilter} onValueChange={setRoleFilter}>
           <SelectTrigger className="sm:w-48"><SelectValue placeholder="Role" /></SelectTrigger>
           <SelectContent>
@@ -170,6 +275,7 @@ export default function Users() {
         </Select>
       </div>
 
+
       <div className="ra-card overflow-hidden">
         {isLoading ? (
           <div className="p-8 text-center text-muted-foreground text-sm">Loading users…</div>
@@ -184,7 +290,16 @@ export default function Users() {
             <table className="w-full text-sm">
               <thead className="bg-muted/40 border-b border-border">
                 <tr className="text-left">
+                  {selectionMode && (
+                    <th className="px-4 py-3 w-10">
+                      <Checkbox
+                        checked={selectionState.selectedAllVisible}
+                        onCheckedChange={() => selectionState.toggleSelectAllVisible()}
+                      />
+                    </th>
+                  )}
                   <th className="px-4 py-3 font-medium">Name</th>
+
                   <th className="px-4 py-3 font-medium">Email</th>
                   <th className="px-4 py-3 font-medium">Roles</th>
                   <th className="px-4 py-3 font-medium">Status</th>
@@ -192,41 +307,66 @@ export default function Users() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((p) => (
-                  <tr key={p.id} className="border-b border-border last:border-0">
-                    <td className="px-4 py-3 font-medium">{p.full_name || "—"}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{p.email ?? "—"}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        {(rolesByUser[p.id] ?? []).length === 0 ? (
-                          <span className="text-xs text-muted-foreground italic">None</span>
-                        ) : (
-                          (rolesByUser[p.id] ?? []).map((r) => (
-                            <span key={r} className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-                              {ROLE_LABEL[r]}
-                            </span>
-                          ))
-                        )}
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={
-                          p.status === "active"
-                            ? "text-xs bg-success/10 text-success px-2 py-0.5 rounded-full"
-                            : "text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full"
-                        }
-                      >
-                        {p.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(p)}>
-                        Edit
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
+                {filtered.map((p) => {
+                  const isSelected = selectionState.selectedIds.has(p.id);
+                  return (
+                    <tr
+                      key={p.id}
+                      className={`border-b border-border last:border-0 ${
+                        isSelected ? "bg-primary/5" : ""
+                      }`}
+                    >
+                      {selectionMode && (
+                        <td className="px-4 py-3 w-10">
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() =>
+                              selectionState.toggleRow(p.id)
+                            }
+                          />
+                        </td>
+                      )}
+                      <td className="px-4 py-3 font-medium">{p.full_name || "—"}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{p.email ?? "—"}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex flex-wrap gap-1">
+                          {(rolesByUser[p.id] ?? []).length === 0 ? (
+                            <span className="text-xs text-muted-foreground italic">None</span>
+                          ) : (
+                            (rolesByUser[p.id] ?? []).map((r) => (
+                              <span
+                                key={r}
+                                className="text-xs bg-primary/10 text-primary px-2 py-0.5 rounded-full"
+                              >
+                                {ROLE_LABEL[r]}
+                              </span>
+                            ))
+                          )}
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <span
+                          className={
+                            p.status === "active"
+                              ? "text-xs bg-success/10 text-success px-2 py-0.5 rounded-full"
+                              : "text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full"
+                          }
+                        >
+                          {p.status}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openEdit(p)}
+                        >
+                          Edit
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

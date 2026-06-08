@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useCallback } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth, hasAnyRole } from "@/hooks/useAuth";
@@ -13,23 +13,42 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Wallet, Plus, Receipt } from "lucide-react";
 import { toast } from "sonner";
-import { format } from "date-fns";
-import { jsPDF } from "jspdf";
-import autoTable from "jspdf-autotable";
-import * as XLSX from "xlsx";
+import { format, startOfDay, endOfDay, startOfWeek, endOfWeek, startOfMonth, endOfMonth, startOfYear, endOfYear, parseISO, isWithinInterval } from "date-fns";
+import { Checkbox } from "@/components/ui/checkbox";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
+import { exportData, ExportFormat } from "@/utils/export/exportData";
+import { useRowSelection } from "@/components/reuse/finance/selection/useRowSelection";
+import { useSelectionExport } from "@/components/reuse/finance/export/useSelectionExport";
+
+
 
 type FeeStruct = { id: string; name: string; program: string | null; amount: number; frequency: string; active: boolean };
 type Invoice = { id: string; invoice_number: string; student_id: string; amount: number; amount_paid: number; due_date: string; status: string; notes: string | null };
 type Student = { id: string; full_name: string };
 type Payment = { id: string; invoice_id: string; amount: number; method: string; reference: string | null; paid_on: string };
+const FILTER_TYPES = ["all", "day", "week", "month", "year", "custom"] as const;
+const EXPORT_FORMATS = ["pdf", "xlsx", "csv", "txt", "json"] as const;
+const EXPORT_FORMAT_LABELS: Record<ExportFormat, string> = {
+  pdf: "PDF",
+  xlsx: "Excel (.xlsx)",
+  csv: "CSV",
+  txt: "TXT",
+  json: "JSON",
+};
+
+const PAYMENT_METHODS = ["cash", "bank_transfer", "upi", "card", "cheque"] as const;
+const FILTER_LABELS: Record<string, string> = { all: "All", day: "Today", week: "This week", month: "This month", year: "This year", custom: "Custom range" };
+const EXPORT_LABELS: Record<string, string> = { pdf: "PDF", xlsx: "Excel (.xlsx)", csv: "CSV", json: "JSON" };
+const PAYMENT_LABELS: Record<string, string> = { cash: "Cash", bank_transfer: "Bank transfer", upi: "UPI", card: "Card", cheque: "Cheque"};
+const INITIAL_STRUCT_FORM = { name: "", program: "", amount: 0, frequency: "one_time" };
+const INITIAL_INV_FORM = { student_id: "", fee_structure_id: "none", amount: 0, due_date: "", notes: "" };
+const INITIAL_PAY_FORM = { amount: 0, method: "cash", reference: "" };
 
 export default function Finance() {
   const { user, roles } = useAuth();
   const canManage = hasAnyRole(roles, ["admin", "accountant"]);
   const isStudent = hasAnyRole(roles, ["student"]);
   const qc = useQueryClient();
-  
-
   const { data: structures = [] } = useQuery({
     queryKey: ["fee-structures"],
     queryFn: async () => (await supabase.from("fee_structures").select("*").order("created_at", { ascending: false })).data as FeeStruct[] ?? [],
@@ -51,9 +70,62 @@ export default function Finance() {
     queryFn: async () => (await supabase.from("students").select("id").eq("user_id", user!.id).maybeSingle()).data,
   });
 
+  // visibleInvoices depends on myStudent/invoices and must be available before filteredInvoices
+  const visibleInvoices = isStudent && !canManage
+    ? invoices.filter(i => i.student_id === myStudent?.id)
+    : invoices;
+
+  // --- Filter state and helpers ---
+  const [filterType, setFilterType] = useState<string>("all");
+  const [customStart, setCustomStart] = useState<string>("");
+  const [customEnd, setCustomEnd] = useState<string>("");
+
+  // single memo for date range used by filters
+  const dateRange = useMemo((): [Date, Date] | null => {
+    const now = new Date();
+    try {
+      switch (filterType) {
+        case "day":
+          return [startOfDay(now), endOfDay(now)];
+        case "week":
+          return [startOfWeek(now), endOfWeek(now)];
+        case "month":
+          return [startOfMonth(now), endOfMonth(now)];
+        case "year":
+          return [startOfYear(now), endOfYear(now)];
+        case "custom":
+          if (!customStart || !customEnd) return null;
+          return [startOfDay(parseISO(customStart)), endOfDay(parseISO(customEnd))];
+        default:
+          return null;
+      }
+    } catch {
+      return null;
+    }
+  }, [filterType, customStart, customEnd]);
+
+  const filteredInvoices = useMemo(() => {
+    if (!invoices) return [];
+    if (filterType === "all") return visibleInvoices;
+    const range = dateRange;
+    if (!range) return visibleInvoices; // if custom range not set, fall back
+    const [start, end] = range;
+    return visibleInvoices.filter(i => {
+      try {
+        const d = i.due_date ? parseISO(i.due_date) : new Date(i.due_date);
+        return isWithinInterval(d, { start, end });
+      } catch {
+        return false;
+      }
+    });
+  }, [visibleInvoices, filterType, dateRange, invoices]);
+
   // Fee structure dialog
   const [structOpen, setStructOpen] = useState(false);
-  const [structForm, setStructForm] = useState({ name: "", program: "", amount: 0, frequency: "one_time" });
+  const [structForm, setStructForm] = useState(INITIAL_STRUCT_FORM);
+
+  const resetStructForm = useCallback(() => setStructForm(INITIAL_STRUCT_FORM), []);
+
   const createStruct = useMutation({
     mutationFn: async () => {
       if (!structForm.name.trim() || structForm.amount <= 0) throw new Error("Name and amount required");
@@ -62,13 +134,14 @@ export default function Finance() {
       }]);
       if (error) throw error;
     },
-    onSuccess: () => { toast.success("Fee plan created"); qc.invalidateQueries({ queryKey: ["fee-structures"] }); setStructOpen(false); setStructForm({ name: "", program: "", amount: 0, frequency: "one_time" }); },
+    onSuccess: () => { toast.success("Fee plan created"); qc.invalidateQueries({ queryKey: ["fee-structures"] }); setStructOpen(false); resetStructForm(); },
     onError: (e: any) => toast.error(e.message),
   });
 
   // Invoice dialog
   const [invOpen, setInvOpen] = useState(false);
-  const [invForm, setInvForm] = useState({ student_id: "", fee_structure_id: "none", amount: 0, due_date: "", notes: "" });
+  const [invForm, setInvForm] = useState(INITIAL_INV_FORM);
+  const resetInvForm = useCallback(() => setInvForm(INITIAL_INV_FORM), []);
   const createInv = useMutation({
     mutationFn: async () => {
       if (!invForm.student_id || !invForm.due_date || invForm.amount <= 0) throw new Error("All fields required");
@@ -79,13 +152,14 @@ export default function Finance() {
       }]);
       if (error) throw error;
     },
-    onSuccess: () => { toast.success("Invoice created"); qc.invalidateQueries({ queryKey: ["invoices"] }); setInvOpen(false); setInvForm({ student_id: "", fee_structure_id: "none", amount: 0, due_date: "", notes: "" }); },
+    onSuccess: () => { toast.success("Invoice created"); qc.invalidateQueries({ queryKey: ["invoices"] }); setInvOpen(false); resetInvForm(); },
     onError: (e: any) => toast.error(e.message),
   });
 
   // Payment dialog
   const [payFor, setPayFor] = useState<Invoice | null>(null);
-  const [payForm, setPayForm] = useState({ amount: 0, method: "cash", reference: "" });
+  const [payForm, setPayForm] = useState(INITIAL_PAY_FORM);
+  const resetPayForm = useCallback(() => setPayForm(INITIAL_PAY_FORM), []);
   const recordPay = useMutation({
     mutationFn: async () => {
       if (!payFor || payForm.amount <= 0) throw new Error("Enter amount");
@@ -94,100 +168,74 @@ export default function Finance() {
       }]);
       if (error) throw error;
     },
-    onSuccess: () => { toast.success("Payment recorded"); qc.invalidateQueries({ queryKey: ["invoices"] }); setPayFor(null); setPayForm({ amount: 0, method: "cash", reference: "" }); },
+    onSuccess: () => { toast.success("Payment recorded"); qc.invalidateQueries({ queryKey: ["invoices"] }); setPayFor(null); resetPayForm(); },
     onError: (e: any) => toast.error(e.message),
   });
 
-  const visibleInvoices = isStudent && !canManage
-    ? invoices.filter(i => i.student_id === myStudent?.id)
-    : invoices;
+  // Selection + export state
+  const invoiceSelection = useRowSelection<Invoice>({
+    getRowId: (i) => i.id,
+    getVisibleRows: () => filteredInvoices,
+    clearSelectionOnExit: true,
+  });
 
-  // New: export state + export function
-  const [exportFormat, setExportFormat] = useState<string>("pdf");
+  const selectionMode = invoiceSelection.selectionMode;
+  const selectedInvoiceIds = invoiceSelection.selectedIds;
+  const selectedCount = invoiceSelection.selectedCount;
 
-  const exportInvoices = (formatType: string = exportFormat) => {
-    try {
-      const rows = visibleInvoices.map(i => ({
-        invoice_number: i.invoice_number,
-        student: studentById[i.student_id] ?? "—",
-        amount: Number(i.amount).toFixed(2),
-        paid: Number(i.amount_paid).toFixed(2),
-        due: format(new Date(i.due_date), "PP"),
-        status: i.status,
-      }));
 
-      const filenameBase = `invoices_${new Date().toISOString().slice(0,19).replace(/[:T]/g, "-")}`;
+  const invoiceToExportRow = useCallback(
+    (i: Invoice) => ({
+      invoice_number: i.invoice_number,
+      student: studentById[i.student_id] ?? "—",
+      amount: Number(i.amount).toFixed(2),
+      paid: Number(i.amount_paid).toFixed(2),
+      due: format(new Date(i.due_date), "PP"),
+      status: i.status,
+    }),
+    [studentById]
+  );
 
-      if (formatType === "pdf") {
-        const doc = new jsPDF();
-        const heading = "Rooted Academy";
-        const title = "Invoice Report";
+  const visibleExportRows = useMemo(
+    () => filteredInvoices.map(invoiceToExportRow),
+    [filteredInvoices, invoiceToExportRow]
+  );
 
-        // Get page width
-        const pageWidth = doc.internal.pageSize.getWidth();
+  const selectedInvoices = useMemo(
+    () => invoiceSelection.getSelectedRows(filteredInvoices),
+    [invoiceSelection, filteredInvoices]
+  );
 
-        // Main heading
-        doc.setFontSize(16);
-        doc.setFont("helvetica", "bold");
-        doc.text(heading, pageWidth / 2, 20, { align: "center" });
+  const selectedExportRows = useMemo(
+    () => selectedInvoices.map(invoiceToExportRow),
+    [selectedInvoices, invoiceToExportRow]
+  );
 
-        doc.setFontSize(12);
-        
-        doc.setFontSize(12);
-        doc.setFont("helvetica", "normal");
-        doc.text(title, pageWidth / 2, 28, { align: "center" });
 
-        const head = [["Invoice #", "Student", "Amount", "Paid", "Due", "Status"]];
-        const body = rows.map(r => [r.invoice_number, r.student, r.amount, r.paid, r.due, r.status]);
-        // start the table below the title
-        autoTable(doc, { head, body, startY: 36 });
-        doc.save(`${filenameBase}.pdf`);
-        toast.success("PDF downloaded");
-        return;
-      }
+  const toggleInvoice = invoiceSelection.toggleRow;
 
-      // Use XLSX for spreadsheet and CSV
-      const ws = XLSX.utils.json_to_sheet(rows);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Invoices");
 
-      if (formatType === "xlsx") {
-        XLSX.writeFile(wb, `${filenameBase}.xlsx`);
-        toast.success("Excel file downloaded");
-        return;
-      }
+  const selectedAllVisible = invoiceSelection.selectedAllVisible;
+  const toggleSelectAllVisible = invoiceSelection.toggleSelectAllVisible;
+  const exitSelectionMode = invoiceSelection.exitSelectionMode;
 
-      if (formatType === "csv") {
-        const csv = XLSX.utils.sheet_to_csv(ws);
-        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `${filenameBase}.csv`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        URL.revokeObjectURL(url);
-        toast.success("CSV downloaded");
-        return;
-      }
 
-      // fallback: JSON download
-      const jsonBlob = new Blob([JSON.stringify(rows, null, 2)], { type: "application/json" });
-      const jsonUrl = URL.createObjectURL(jsonBlob);
-      const a = document.createElement("a");
-      a.href = jsonUrl;
-      a.download = `${filenameBase}.json`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      URL.revokeObjectURL(jsonUrl);
-      toast.success("JSON downloaded");
+  const filenameBase = useCallback(
+    () => `invoices_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`,
+    []
+  );
 
-    } catch (e: any) {
-      toast.error(e?.message || "Export failed");
-    }
-  };
+  const { handleExport } = useSelectionExport<Invoice>({
+    selectionMode,
+    selectedCount: selectedCount,
+    visibleRows: filteredInvoices,
+    selectedRows: selectedInvoices,
+    filenameBase: filenameBase(),
+    mapRow: invoiceToExportRow,
+  });
+
+
+
 
   return (
     <div>
@@ -202,27 +250,91 @@ export default function Finance() {
           <div className="flex items-center gap-3">
             {canManage && <Button onClick={() => setInvOpen(true)}><Plus className="h-4 w-4 mr-1" /> New invoice</Button>}
 
-            {/* Export controls */}
+            {/* Filter controls */}
             <div className="flex items-center gap-2">
-              <Select value={exportFormat} onValueChange={v => setExportFormat(v)}>
+              <Button
+                variant={selectionMode ? "default" : "outline"}
+                onClick={() => invoiceSelection.enterSelectionMode()}
+              >
+                Select
+              </Button>
+
+
+              {selectionMode && (
+                <Button variant="ghost" onClick={exitSelectionMode}>
+                  Cancel
+                </Button>
+
+              )}
+
+              {selectionMode && (
+                <div className="text-sm text-muted-foreground">
+                  {selectedCount} records selected
+                </div>
+              )}
+
+              <Select value={filterType} onValueChange={v => setFilterType(v)}>
                 <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="pdf">PDF</SelectItem>
-                  <SelectItem value="xlsx">Excel (.xlsx)</SelectItem>
-                  <SelectItem value="csv">CSV</SelectItem>
-                  <SelectItem value="json">JSON</SelectItem>
+                  {FILTER_TYPES.map(t => (
+                    <SelectItem key={t} value={t}>{FILTER_LABELS[t]}</SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
-              <Button onClick={() => exportInvoices()}><Receipt className="h-4 w-4 mr-1" /> Download</Button>
+
+              {filterType === "custom" && (
+                <div className="flex items-center gap-2">
+                  <Input type="date" value={customStart} onChange={e => setCustomStart(e.target.value)} />
+                  <Input type="date" value={customEnd} onChange={e => setCustomEnd(e.target.value)} />
+                </div>
+              )}
+
+              {/* Export controls */}
+              <div className="flex items-center gap-2">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" className="gap-2">
+                      <Receipt className="h-4 w-4" />
+                      <span>Download</span>
+                      <span className="text-muted-foreground">▼</span>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-64">
+                    <DropdownMenuLabel>Export options</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+
+                    {EXPORT_FORMATS.map((f) => (
+                      <div key={f}>
+                        {/* <DropdownMenuLabel className="pt-2">{EXPORT_FORMAT_LABELS[f]}</DropdownMenuLabel> */}
+                        <DropdownMenuItem onClick={() => handleExport(f)} className="pt-2">
+                          {EXPORT_FORMAT_LABELS[f]}
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+
+                      </div>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+
             </div>
           </div>
 
-          {visibleInvoices.length === 0 ? <EmptyState icon={Receipt} title="No invoices" /> : (
+          {filteredInvoices.length === 0 ? <EmptyState icon={Receipt} title="No invoices" /> : (
             <div className="ra-card overflow-x-auto">
               <table className="w-full text-sm">
                 <thead className="bg-muted/40 border-b border-border">
                   <tr>
+                    {selectionMode && (
+                      <th className="px-4 py-3 w-10">
+                        <Checkbox
+                          checked={selectedAllVisible}
+                          onCheckedChange={() => toggleSelectAllVisible()}
+                        />
+                      </th>
+                    )}
                     <th className="px-4 py-3 text-left font-medium">Invoice #</th>
+
                     <th className="px-4 py-3 text-left font-medium">Student</th>
                     <th className="px-4 py-3 text-left font-medium">Amount</th>
                     <th className="px-4 py-3 text-left font-medium">Paid</th>
@@ -232,28 +344,64 @@ export default function Finance() {
                   </tr>
                 </thead>
                 <tbody>
-                  {visibleInvoices.map(i => (
-                    <tr key={i.id} className="border-b border-border last:border-0">
-                      <td className="px-4 py-3 font-mono text-xs">{i.invoice_number}</td>
-                      <td className="px-4 py-3">{studentById[i.student_id] ?? "—"}</td>
-                      <td className="px-4 py-3">{i.amount.toFixed(2)}</td>
-                      <td className="px-4 py-3">{i.amount_paid.toFixed(2)}</td>
-                      <td className="px-4 py-3 text-muted-foreground">{format(new Date(i.due_date), "PP")}</td>
-                      <td className="px-4 py-3">
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${
-                          i.status === "paid" ? "bg-success/15 text-success" :
-                          i.status === "partial" ? "bg-warning/15 text-warning" :
-                          i.status === "overdue" ? "bg-destructive/15 text-destructive" :
-                          "bg-muted text-muted-foreground"
-                        }`}>{i.status}</span>
-                      </td>
-                      {canManage && (
-                        <td className="px-4 py-3 text-right">
-                          {i.status !== "paid" && <Button size="sm" variant="outline" onClick={() => { setPayFor(i); setPayForm({ amount: i.amount - i.amount_paid, method: "cash", reference: "" }); }}>Record payment</Button>}
+                  {filteredInvoices.map((i) => {
+                    const isSelected = selectedInvoiceIds.has(i.id);
+                    return (
+                      <tr
+                        key={i.id}
+                        className={`border-b border-border last:border-0 ${isSelected ? "bg-primary/5" : ""}`}
+                      >
+                        {selectionMode && (
+                          <td className="px-4 py-3 w-10">
+                            <Checkbox
+                              checked={isSelected}
+                              onCheckedChange={() => toggleInvoice(i.id)}
+                            />
+                          </td>
+                        )}
+                        <td className="px-4 py-3 font-mono text-xs">{i.invoice_number}</td>
+                        <td className="px-4 py-3">{studentById[i.student_id] ?? "—"}</td>
+                        <td className="px-4 py-3">{i.amount.toFixed(2)}</td>
+                        <td className="px-4 py-3">{i.amount_paid.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-muted-foreground">{format(new Date(i.due_date), "PP")}</td>
+                        <td className="px-4 py-3">
+                          <span
+                            className={`text-xs px-2 py-0.5 rounded-full ${
+                              i.status === "paid"
+                                ? "bg-success/15 text-success"
+                                : i.status === "partial"
+                                  ? "bg-warning/15 text-warning"
+                                  : i.status === "overdue"
+                                    ? "bg-destructive/15 text-destructive"
+                                    : "bg-muted text-muted-foreground"
+                            }`}
+                          >
+                            {i.status}
+                          </span>
                         </td>
-                      )}
-                    </tr>
-                  ))}
+                        {canManage && (
+                          <td className="px-4 py-3 text-right">
+                            {i.status !== "paid" && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setPayFor(i);
+                                  setPayForm({
+                                    amount: i.amount - i.amount_paid,
+                                    method: "cash",
+                                    reference: "",
+                                  });
+                                }}
+                              >
+                                Record payment
+                              </Button>
+                            )}
+                          </td>
+                        )}
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
@@ -358,11 +506,9 @@ export default function Finance() {
                 <Select value={payForm.method} onValueChange={v => setPayForm({ ...payForm, method: v })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="cash">Cash</SelectItem>
-                    <SelectItem value="bank_transfer">Bank transfer</SelectItem>
-                    <SelectItem value="upi">UPI</SelectItem>
-                    <SelectItem value="card">Card</SelectItem>
-                    <SelectItem value="cheque">Cheque</SelectItem>
+                    {PAYMENT_METHODS.map(m => (
+                      <SelectItem key={m} value={m}>{PAYMENT_LABELS[m]}</SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
