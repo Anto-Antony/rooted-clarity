@@ -2,27 +2,32 @@ import { useState, useMemo, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth, hasAnyRole } from "@/hooks/useAuth";
+import { useAttendanceSessions } from "@/hooks/useAttendanceSessions";
+import { useWorkingDay } from "@/hooks/useWorkingDay";
 import { PageHeader } from "@/components/shared/PageHeader";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ClipboardCheck, Save } from "lucide-react";
+import { ClipboardCheck, Save, Sparkles } from "lucide-react";
 import { toast } from "sonner";
+import type { AttendanceStatus } from "@/lib/attendance";
 
 type ClassRow = { id: string; section: string; academic_year: string; course_id: string };
 type Course = { id: string; name: string };
 type Student = { id: string; full_name: string };
-type Status = "present" | "absent" | "late" | "excused";
 
 export default function Attendance() {
   const { user, roles } = useAuth();
-  const canMark = hasAnyRole(roles, ["admin", "head_staff", "regular_staff"]);
+  const canManageAll = hasAnyRole(roles, ["admin", "head_staff"]);
+  const isStaff = hasAnyRole(roles, ["admin", "head_staff", "regular_staff", "guest_staff"]);
   const qc = useQueryClient();
+
   const [classId, setClassId] = useState("");
   const [date, setDate] = useState(new Date().toISOString().slice(0, 10));
-  const [marks, setMarks] = useState<Record<string, Status>>({});
+  const [sessionId, setSessionId] = useState("");
+  const [marks, setMarks] = useState<Record<string, AttendanceStatus>>({});
 
   const { data: classes = [] } = useQuery({
     queryKey: ["att-classes"],
@@ -33,6 +38,24 @@ export default function Attendance() {
     queryFn: async () => (await supabase.from("courses").select("id, name")).data as Course[] ?? [],
   });
   const courseById = useMemo(() => Object.fromEntries(courses.map(c => [c.id, c.name])), [courses]);
+
+  const workingDay = useWorkingDay(date, classId);
+  const sessions = useAttendanceSessions(classId, date);
+  const session = sessions.data?.find(s => s.id === sessionId);
+
+  useEffect(() => { setSessionId(""); }, [classId, date]);
+
+  const generate = useMutation({
+    mutationFn: async () => {
+      const { data, error } = await supabase.rpc("generate_attendance_sessions", {
+        _class_id: classId, _from: date, _to: date,
+      });
+      if (error) throw error;
+      return data as number;
+    },
+    onSuccess: (n) => { toast.success(`Generated ${n} session(s)`); qc.invalidateQueries({ queryKey: ["att-sessions", classId, date] }); },
+    onError: (e: any) => toast.error(e.message),
+  });
 
   const { data: enrolled = [] } = useQuery({
     queryKey: ["att-enrolled", classId],
@@ -47,16 +70,16 @@ export default function Attendance() {
   });
 
   const { data: existing = [] } = useQuery({
-    queryKey: ["att-existing", classId, date],
-    enabled: !!classId && !!date,
+    queryKey: ["att-period-existing", sessionId],
+    enabled: !!sessionId,
     queryFn: async () => {
-      const { data } = await supabase.from("attendance_records").select("student_id, status").eq("class_id", classId).eq("date", date);
+      const { data } = await supabase.from("period_attendance_records").select("student_id, status").eq("session_id", sessionId);
       return data ?? [];
     },
   });
 
   useEffect(() => {
-    const next: Record<string, Status> = {};
+    const next: Record<string, AttendanceStatus> = {};
     enrolled.forEach(s => { next[s.id] = "present"; });
     existing.forEach((r: any) => { next[r.student_id] = r.status; });
     setMarks(next);
@@ -64,14 +87,19 @@ export default function Attendance() {
 
   const save = useMutation({
     mutationFn: async () => {
-      if (!classId) throw new Error("Select a class");
+      if (!sessionId) throw new Error("Select a period");
       const rows = enrolled.map(s => ({
-        class_id: classId, student_id: s.id, date, status: marks[s.id] ?? "present", marked_by: user?.id,
+        session_id: sessionId, student_id: s.id, status: marks[s.id] ?? "present", marked_by: user?.id,
       }));
-      const { error } = await supabase.from("attendance_records").upsert(rows, { onConflict: "class_id,student_id,date" });
+      const { error } = await supabase.from("period_attendance_records").upsert(rows, { onConflict: "session_id,student_id" });
       if (error) throw error;
+      await supabase.from("attendance_sessions").update({ status: "marked" }).eq("id", sessionId);
     },
-    onSuccess: () => { toast.success("Attendance saved"); qc.invalidateQueries({ queryKey: ["att-existing", classId, date] }); },
+    onSuccess: () => {
+      toast.success("Attendance saved");
+      qc.invalidateQueries({ queryKey: ["att-period-existing", sessionId] });
+      qc.invalidateQueries({ queryKey: ["att-sessions", classId, date] });
+    },
     onError: (e: any) => toast.error(e.message),
   });
 
@@ -81,9 +109,15 @@ export default function Attendance() {
     return c;
   }, [marks]);
 
+  const isFuture = date > new Date().toISOString().slice(0, 10);
+  const canMarkThis = isStaff && session && session.status !== "cancelled" && !isFuture && (
+    canManageAll || (session.teacher_id != null)
+  );
+
   return (
     <div>
-      <PageHeader title="Attendance" description="Mark daily attendance per class." />
+      <PageHeader title="Attendance" description="Period-wise attendance per class." />
+
       <div className="ra-card p-4 mb-4 grid sm:grid-cols-3 gap-3 items-end">
         <div className="space-y-1">
           <Label>Class</Label>
@@ -98,24 +132,58 @@ export default function Attendance() {
           <Label>Date</Label>
           <Input type="date" value={date} onChange={e => setDate(e.target.value)} />
         </div>
-        <Button disabled={!canMark || !classId || enrolled.length === 0 || save.isPending} onClick={() => save.mutate()}>
-          <Save className="h-4 w-4 mr-1" /> {save.isPending ? "Saving…" : "Save attendance"}
-        </Button>
+        <div className="space-y-1">
+          <Label>Period</Label>
+          <Select value={sessionId} onValueChange={setSessionId} disabled={!classId || (sessions.data?.length ?? 0) === 0}>
+            <SelectTrigger><SelectValue placeholder={sessions.data?.length ? "Select period" : "No sessions"} /></SelectTrigger>
+            <SelectContent>
+              {(sessions.data ?? []).map(s => (
+                <SelectItem key={s.id} value={s.id}>
+                  P{s.period} · {s.subject}{s.status === "marked" ? " · ✓" : ""}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
-      {classId && enrolled.length > 0 && (
+      {classId && workingDay.data && !workingDay.data.working && (
+        <div className="ra-card p-4 mb-4 border-warning/40 bg-warning/5 text-sm">
+          Not a working day ({workingDay.data.reason}). No sessions will be generated.
+        </div>
+      )}
+
+      {classId && workingDay.data?.working && (sessions.data?.length ?? 0) === 0 && (
+        <div className="ra-card p-4 mb-4 flex items-center justify-between">
+          <div className="text-sm text-muted-foreground">No sessions yet for this date.</div>
+          {isStaff && (
+            <Button size="sm" onClick={() => generate.mutate()} disabled={generate.isPending}>
+              <Sparkles className="h-4 w-4 mr-1" />{generate.isPending ? "Generating…" : "Generate from timetable"}
+            </Button>
+          )}
+        </div>
+      )}
+
+      {sessionId && enrolled.length > 0 && (
         <div className="flex flex-wrap gap-3 mb-4 text-sm">
           <div className="ra-card px-4 py-2"><span className="text-muted-foreground">Present</span> <span className="font-semibold ml-1">{counts.present}</span></div>
           <div className="ra-card px-4 py-2"><span className="text-muted-foreground">Absent</span> <span className="font-semibold ml-1">{counts.absent}</span></div>
           <div className="ra-card px-4 py-2"><span className="text-muted-foreground">Late</span> <span className="font-semibold ml-1">{counts.late}</span></div>
           <div className="ra-card px-4 py-2"><span className="text-muted-foreground">Excused</span> <span className="font-semibold ml-1">{counts.excused}</span></div>
+          <div className="ml-auto">
+            <Button onClick={() => save.mutate()} disabled={!canMarkThis || save.isPending}>
+              <Save className="h-4 w-4 mr-1" /> {save.isPending ? "Saving…" : "Save attendance"}
+            </Button>
+          </div>
         </div>
       )}
 
       {!classId ? (
-        <EmptyState icon={ClipboardCheck} title="Select a class" description="Pick a class to mark attendance." />
+        <EmptyState icon={ClipboardCheck} title="Select a class" description="Pick a class to view its periods." />
+      ) : !sessionId ? (
+        <EmptyState icon={ClipboardCheck} title="Select a period" description="Choose a period (subject) to mark attendance." />
       ) : enrolled.length === 0 ? (
-        <EmptyState icon={ClipboardCheck} title="No students enrolled" description="Enroll students to this class first (Classes → Manage roster)." />
+        <EmptyState icon={ClipboardCheck} title="No students enrolled" description="Enroll students to this class first." />
       ) : (
         <div className="ra-card overflow-hidden">
           <table className="w-full text-sm">
@@ -128,10 +196,10 @@ export default function Attendance() {
                   <td className="px-4 py-3">{s.full_name}</td>
                   <td className="px-4 py-3">
                     <div className="flex gap-1">
-                      {(["present", "absent", "late", "excused"] as Status[]).map(opt => (
+                      {(["present", "absent", "late", "excused"] as AttendanceStatus[]).map(opt => (
                         <button
                           key={opt}
-                          disabled={!canMark}
+                          disabled={!canMarkThis}
                           onClick={() => setMarks({ ...marks, [s.id]: opt })}
                           className={`px-3 py-1 rounded-full text-xs border transition ${
                             marks[s.id] === opt
