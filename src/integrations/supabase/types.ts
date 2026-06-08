@@ -14,6 +14,44 @@ export type Database = {
   }
   public: {
     Tables: {
+      academic_calendar_days: {
+        Row: {
+          class_id: string | null
+          created_at: string
+          date: string
+          id: string
+          kind: string
+          note: string | null
+          updated_at: string
+        }
+        Insert: {
+          class_id?: string | null
+          created_at?: string
+          date: string
+          id?: string
+          kind: string
+          note?: string | null
+          updated_at?: string
+        }
+        Update: {
+          class_id?: string | null
+          created_at?: string
+          date?: string
+          id?: string
+          kind?: string
+          note?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "academic_calendar_days_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       assignment_submissions: {
         Row: {
           assignment_id: string
@@ -130,6 +168,73 @@ export type Database = {
           updated_at?: string
         }
         Relationships: []
+      }
+      attendance_sessions: {
+        Row: {
+          class_id: string
+          created_at: string
+          date: string
+          end_time: string | null
+          id: string
+          period: number
+          slot_id: string | null
+          start_time: string | null
+          status: string
+          subject: string
+          teacher_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          class_id: string
+          created_at?: string
+          date: string
+          end_time?: string | null
+          id?: string
+          period: number
+          slot_id?: string | null
+          start_time?: string | null
+          status?: string
+          subject: string
+          teacher_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          class_id?: string
+          created_at?: string
+          date?: string
+          end_time?: string | null
+          id?: string
+          period?: number
+          slot_id?: string | null
+          start_time?: string | null
+          status?: string
+          subject?: string
+          teacher_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "attendance_sessions_class_id_fkey"
+            columns: ["class_id"]
+            isOneToOne: false
+            referencedRelation: "classes"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendance_sessions_slot_id_fkey"
+            columns: ["slot_id"]
+            isOneToOne: false
+            referencedRelation: "timetable_slots"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "attendance_sessions_teacher_id_fkey"
+            columns: ["teacher_id"]
+            isOneToOne: false
+            referencedRelation: "staff"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       audit_logs: {
         Row: {
@@ -538,6 +643,54 @@ export type Database = {
           },
         ]
       }
+      period_attendance_records: {
+        Row: {
+          created_at: string
+          id: string
+          marked_by: string | null
+          remarks: string | null
+          session_id: string
+          status: Database["public"]["Enums"]["attendance_status"]
+          student_id: string
+          updated_at: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          marked_by?: string | null
+          remarks?: string | null
+          session_id: string
+          status?: Database["public"]["Enums"]["attendance_status"]
+          student_id: string
+          updated_at?: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          marked_by?: string | null
+          remarks?: string | null
+          session_id?: string
+          status?: Database["public"]["Enums"]["attendance_status"]
+          student_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "period_attendance_records_session_id_fkey"
+            columns: ["session_id"]
+            isOneToOne: false
+            referencedRelation: "attendance_sessions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "period_attendance_records_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       profiles: {
         Row: {
           address: string | null
@@ -818,9 +971,65 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      v_student_daily_attendance: {
+        Row: {
+          attended: number | null
+          conducted: number | null
+          date: string | null
+          pct: number | null
+          student_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "period_attendance_records_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      v_student_overall_attendance: {
+        Row: {
+          attended: number | null
+          conducted: number | null
+          pct: number | null
+          student_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "period_attendance_records_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      v_student_subject_attendance: {
+        Row: {
+          attended: number | null
+          conducted: number | null
+          pct: number | null
+          student_id: string | null
+          subject: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "period_attendance_records_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
+      generate_attendance_sessions: {
+        Args: { _class_id: string; _from: string; _to: string }
+        Returns: number
+      }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]
@@ -828,6 +1037,11 @@ export type Database = {
         }
         Returns: boolean
       }
+      is_working_day: {
+        Args: { _class_id: string; _date: string }
+        Returns: Json
+      }
+      resync_future_sessions: { Args: { _slot_id: string }; Returns: number }
     }
     Enums: {
       app_role:
