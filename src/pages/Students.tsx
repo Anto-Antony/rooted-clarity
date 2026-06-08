@@ -11,7 +11,19 @@ import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { GraduationCap, Plus, Lock, Link2, Link2Off } from "lucide-react";
+import { GraduationCap, Plus, Lock, Link2, Link2Off, Receipt } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { exportData, ExportFormat } from "@/utils/export/exportData";
+import { useRowSelection } from "@/components/reuse/finance/selection/useRowSelection";
+import { useSelectionExport } from "@/components/reuse/finance/export/useSelectionExport";
 import { toast } from "sonner";
 import { z } from "zod";
 import { useAuth, hasAnyRole } from "@/hooks/useAuth";
@@ -57,6 +69,15 @@ const emptyForm = {
 };
 
 export default function Students() {
+  const EXPORT_FORMATS: ExportFormat[] = ["pdf", "xlsx", "csv", "json", "txt"];
+  const EXPORT_FORMAT_LABELS: Record<ExportFormat, string> = {
+    pdf: "PDF",
+    xlsx: "Excel (.xlsx)",
+    csv: "CSV",
+    txt: "TXT",
+    json: "JSON",
+  };
+
   const qc = useQueryClient();
   const { roles } = useAuth();
   const canManage = hasAnyRole(roles, ["admin", "head_staff"]);
@@ -127,6 +148,31 @@ export default function Students() {
       (s.program ?? "").toLowerCase().includes(q)
     );
   });
+
+  type StudentRow = Student;
+
+  const selectionState = useRowSelection<StudentRow>({
+    getRowId: (r) => r.id,
+    getVisibleRows: () => filtered,
+  });
+
+  const { handleExport } = useSelectionExport<StudentRow>({
+    selectionMode: selectionState.selectionMode,
+    selectedCount: selectionState.selectedCount,
+    visibleRows: filtered,
+    selectedRows: selectionState.getSelectedRows(filtered),
+    filenameBase: `students_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`,
+    mapRow: (s) => ({
+      full_name: s.full_name || "—",
+      email: s.email ?? "—",
+      program: s.program ?? "—",
+      admission_date: s.admission_date,
+      status: s.status,
+      linked: s.user_id ? "Linked" : "Unlinked",
+    }),
+  });
+
+
 
   const openNew = () => {
     setEditing(null);
@@ -229,14 +275,64 @@ export default function Students() {
         }
       />
 
-      <div className="mb-4">
+      <div className="flex flex-col sm:flex-row gap-2 mb-4 sm:items-center">
         <Input
           placeholder="Search name, email, or program…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="sm:max-w-xs"
         />
+
+        {/* Selection + Export toolbar */}
+        <div className="flex items-center gap-2">
+          <Button
+            variant={selectionState.selectionMode ? "default" : "outline"}
+            onClick={() => selectionState.enterSelectionMode()}
+          >
+            Select
+          </Button>
+
+          {selectionState.selectionMode && (
+            <Button
+              variant="ghost"
+              onClick={() => selectionState.exitSelectionMode()}
+            >
+              Cancel
+            </Button>
+          )}
+
+          {selectionState.selectionMode && (
+            <div className="text-sm text-muted-foreground">
+              {selectionState.selectedCount} records selected
+            </div>
+          )}
+
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" className="gap-2">
+                <Receipt className="h-4 w-4" />
+                <span>Download</span>
+                <span className="text-muted-foreground">▼</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-64">
+              <DropdownMenuLabel>Export options</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              {EXPORT_FORMATS.map((f) => (
+                <div key={f}>
+                  <DropdownMenuItem onClick={() => handleExport(f)} className="pt-2">
+                    {EXPORT_FORMAT_LABELS[f]}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                </div>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
+
+
+
 
       <div className="ra-card overflow-hidden">
         {isLoading ? (
@@ -253,6 +349,14 @@ export default function Students() {
             <table className="w-full text-sm">
               <thead className="bg-muted/40 border-b border-border">
                 <tr className="text-left">
+                  {selectionState.selectionMode && (
+                    <th className="px-4 py-3 w-10">
+                      <Checkbox
+                        checked={selectionState.selectedAllVisible}
+                        onCheckedChange={() => selectionState.toggleSelectAllVisible()}
+                      />
+                    </th>
+                  )}
                   <th className="px-4 py-3 font-medium">Name</th>
                   <th className="px-4 py-3 font-medium">Program</th>
                   <th className="px-4 py-3 font-medium">Admission</th>
@@ -261,51 +365,71 @@ export default function Students() {
                   <th className="px-4 py-3 font-medium text-right">Actions</th>
                 </tr>
               </thead>
+
               <tbody>
-                {filtered.map((s) => (
-                  <tr key={s.id} className="border-b border-border last:border-0">
-                    <td className="px-4 py-3">
-                      <div className="font-medium flex items-center gap-2">
-                        {s.full_name}
-                        {s.locked_at && <Lock className="h-3 w-3 text-muted-foreground" />}
-                      </div>
-                      <div className="text-xs text-muted-foreground">{s.email ?? "—"}</div>
-                    </td>
-                    <td className="px-4 py-3 text-muted-foreground">{s.program ?? "—"}</td>
-                    <td className="px-4 py-3 text-muted-foreground">{s.admission_date}</td>
-                    <td className="px-4 py-3">
-                      {s.user_id ? (
-                        <span className="text-xs bg-success/10 text-success px-2 py-0.5 rounded-full inline-flex items-center gap-1">
-                          <Link2 className="h-3 w-3" /> Linked
-                        </span>
-                      ) : (
-                        <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full inline-flex items-center gap-1">
-                          <Link2Off className="h-3 w-3" /> Unlinked
-                        </span>
+                {filtered.map((s) => {
+                  const isSelected = selectionState.selectedIds.has(s.id);
+                  return (
+                    <tr
+                      key={s.id}
+                      className={`border-b border-border last:border-0 ${isSelected ? "bg-primary/5" : ""}`}
+                    >
+                      {selectionState.selectionMode && (
+                        <td className="px-4 py-3 w-10">
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => selectionState.toggleRow(s.id)}
+                          />
+                        </td>
                       )}
-                    </td>
-                    <td className="px-4 py-3">
-                      <span
-                        className={
-                          s.status === "active"
-                            ? "text-xs bg-success/10 text-success px-2 py-0.5 rounded-full"
-                            : "text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full"
-                        }
-                      >
-                        {s.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {canManage ? (
-                        <Button variant="ghost" size="sm" onClick={() => openEdit(s)}>
-                          {s.locked_at && !canUnlock ? "View" : "Edit"}
-                        </Button>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
+
+                      <td className="px-4 py-3">
+                        <div className="font-medium flex items-center gap-2">
+                          {s.full_name}
+                          {s.locked_at && <Lock className="h-3 w-3 text-muted-foreground" />}
+                        </div>
+                        <div className="text-xs text-muted-foreground">{s.email ?? "—"}</div>
+                      </td>
+
+                      <td className="px-4 py-3 text-muted-foreground">{s.program ?? "—"}</td>
+                      <td className="px-4 py-3 text-muted-foreground">{s.admission_date}</td>
+
+                      <td className="px-4 py-3">
+                        {s.user_id ? (
+                          <span className="text-xs bg-success/10 text-success px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                            <Link2 className="h-3 w-3" /> Linked
+                          </span>
+                        ) : (
+                          <span className="text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full inline-flex items-center gap-1">
+                            <Link2Off className="h-3 w-3" /> Unlinked
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="px-4 py-3">
+                        <span
+                          className={
+                            s.status === "active"
+                              ? "text-xs bg-success/10 text-success px-2 py-0.5 rounded-full"
+                              : "text-xs bg-muted text-muted-foreground px-2 py-0.5 rounded-full"
+                          }
+                        >
+                          {s.status}
+                        </span>
+                      </td>
+
+                      <td className="px-4 py-3 text-right">
+                        {canManage ? (
+                          <Button variant="ghost" size="sm" onClick={() => openEdit(s)}>
+                            {s.locked_at && !canUnlock ? "View" : "Edit"}
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground">—</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

@@ -75,9 +75,9 @@ export function AppShell() {
   const SidebarContent = (
     <>
       <div className="flex items-center gap-2 px-6 py-6 border-b border-sidebar-border">
-        <div className="h-9 w-9 rounded-md bg-primary/10 flex items-center justify-center">
+        {/* <div className="h-9 w-9 rounded-md bg-primary/10 flex items-center justify-center">
           <Sprout className="h-5 w-5 text-primary" />
-        </div>
+        </div> */}
         <div>
           <div className="font-semibold text-sidebar-foreground leading-tight">RootedAcademy</div>
           <div className="text-xs text-muted-foreground">Where Clarity Begins</div>
